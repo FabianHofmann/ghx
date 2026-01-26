@@ -41,11 +41,14 @@ TOKEN_COLORS = {
 
 MONOKAI_STYLE = Style.from_dict({
     "": "#f8f8f2 bg:#272822",
-    "selected": "#f8f8f2 bg:#49483e bold",
     "item": "#f8f8f2",
     "item-path": "#66d9ef",
     "item-line": "#ae81ff",
     "item-author": "#fd971f",
+    "sel-prefix": "#a6e22e bold",
+    "sel-path": "#66d9ef bold",
+    "sel-line": "#ae81ff bold",
+    "sel-author": "#fd971f bold",
     "border": "#75715e",
     "header": "#e5da74 bold",
     "snippet": "#f8f8f2",
@@ -264,7 +267,13 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
                 line_str = "L?"
 
             if is_sel:
-                lines.append(("class:selected", f"{prefix}{c['path']}:{line_str} @{c['author']}\n"))
+                lines.append(("class:sel-prefix", prefix))
+                lines.append(("class:sel-path", c["path"]))
+                lines.append(("class:sel-prefix", ":"))
+                lines.append(("class:sel-line", line_str))
+                lines.append(("class:sel-prefix", " @"))
+                lines.append(("class:sel-author", c["author"]))
+                lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:item-path", c["path"]))

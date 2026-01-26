@@ -16,7 +16,6 @@ from rich.console import Console
 
 MONOKAI_STYLE = Style.from_dict({
     "": "#f8f8f2 bg:#272822",
-    "selected": "#f8f8f2 bg:#49483e bold",
     "item": "#f8f8f2",
     "item-number": "#ae81ff",
     "item-title": "#f8f8f2",
@@ -24,6 +23,12 @@ MONOKAI_STYLE = Style.from_dict({
     "item-author": "#fd971f",
     "item-state": "#a6e22e",
     "item-draft": "#88846f italic",
+    "sel-prefix": "#a6e22e bold",
+    "sel-number": "#ae81ff bold",
+    "sel-title": "#f8f8f2 bold",
+    "sel-branch": "#66d9ef bold",
+    "sel-author": "#fd971f bold",
+    "sel-draft": "#88846f bold italic",
     "border": "#75715e",
     "header": "#e5da74 bold",
     "detail-label": "#e5da74",
@@ -86,7 +91,15 @@ def run_selector(prs: list[dict]) -> None:
             author = pr["author"]["login"].ljust(col_author)
 
             if is_sel:
-                lines.append(("class:selected", f"{prefix}{num} {title}  {branch}  @{author}\n"))
+                lines.append(("class:sel-prefix", prefix))
+                lines.append(("class:sel-number", num))
+                lines.append(("class:sel-title", f" {title}  "))
+                lines.append(("class:sel-branch", branch))
+                lines.append(("class:sel-title", "  @"))
+                lines.append(("class:sel-author", author))
+                if pr["isDraft"]:
+                    lines.append(("class:sel-draft", " [draft]"))
+                lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:item-number", num))
