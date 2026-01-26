@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["prompt_toolkit", "rich", "pygments"]
+# dependencies = ["prompt_toolkit", "rich", "pygments", "pyperclip"]
 # ///
 import subprocess
 import json
@@ -16,6 +16,7 @@ from rich.console import Console
 from pygments import lex
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.token import Token
+import pyperclip
 
 TOKEN_COLORS = {
     Token.Keyword: "#e5da74",
@@ -92,7 +93,8 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
               isResolved
               path
               line
-              comments(first: 1) {
+              originalLine
+              comments(first: 50) {
                 nodes {
                   body
                   author { login }
@@ -124,12 +126,22 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
     comments = []
     for thread in threads:
         if not thread["isResolved"] and thread["comments"]["nodes"]:
-            comment = thread["comments"]["nodes"][0]
+            first_comment = thread["comments"]["nodes"][0]
+            all_comments = [
+                {
+                    "body": c["body"],
+                    "author": c["author"]["login"] if c["author"] else "unknown",
+                }
+                for c in thread["comments"]["nodes"]
+            ]
+            line = thread["line"] or thread["originalLine"]
             comments.append({
                 "path": thread["path"],
-                "line": thread["line"],
-                "body": comment["body"],
-                "author": comment["author"]["login"] if comment["author"] else "unknown",
+                "line": line,
+                "outdated": thread["line"] is None and thread["originalLine"] is not None,
+                "body": first_comment["body"],
+                "author": first_comment["author"]["login"] if first_comment["author"] else "unknown",
+                "replies": all_comments[1:],
             })
     return comments
 
@@ -200,7 +212,28 @@ def open_in_zed(file: str, line: int | None) -> None:
         subprocess.run(["zed", file])
 
 
-def run_selector(comments: list[dict]) -> None:
+def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
+    line_info = f"line {comment['line']}" if comment["line"] else "no specific line"
+    result = (
+        f"PR #{pr_number} in {repo}\n"
+        f"File: {comment['path']} ({line_info})\n"
+        f"Review comment by @{comment['author']}:\n\n"
+        f"{comment['body']}"
+    )
+    for reply in comment.get("replies", []):
+        result += f"\n\n↳ @{reply['author']}:\n{reply['body']}"
+    return result
+
+
+def open_in_claude(prompt: str) -> None:
+    subprocess.Popen(["gnome-terminal", "--", "claude", prompt])
+
+
+def copy_to_clipboard(text: str) -> None:
+    pyperclip.copy(text)
+
+
+def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
     selected = [0]
     scroll_offset = [0]
     visible_count = min(len(comments), 10)
@@ -225,7 +258,10 @@ def run_selector(comments: list[dict]) -> None:
             c = comments[i]
             is_sel = i == selected[0]
             prefix = " ▶ " if is_sel else "   "
-            line_str = f"L{c['line']}" if c["line"] else "L?"
+            if c["line"]:
+                line_str = f"~L{c['line']}" if c.get("outdated") else f"L{c['line']}"
+            else:
+                line_str = "L?"
 
             if is_sel:
                 lines.append(("class:selected", f"{prefix}{c['path']}:{line_str} @{c['author']}\n"))
@@ -253,7 +289,12 @@ def run_selector(comments: list[dict]) -> None:
 
     def get_body_text():
         c = comments[selected[0]]
-        return [("class:comment-body", c["body"])]
+        result = [("class:comment-body", c["body"])]
+        for reply in c.get("replies", []):
+            result.append(("", "\n\n"))
+            result.append(("class:comment-header", f"  ↳ @{reply['author']}:\n"))
+            result.append(("class:comment-body", reply["body"]))
+        return result
 
     def get_footer():
         return [
@@ -263,6 +304,10 @@ def run_selector(comments: list[dict]) -> None:
             ("class:footer", "down  "),
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
+            ("class:footer-key", "c "),
+            ("class:footer", "claude  "),
+            ("class:footer-key", "y "),
+            ("class:footer", "copy  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
@@ -293,6 +338,18 @@ def run_selector(comments: list[dict]) -> None:
     def _(event):
         c = comments[selected[0]]
         open_in_zed(c["path"], c["line"])
+
+    @kb.add("c")
+    def _(event):
+        c = comments[selected[0]]
+        prompt = format_claude_prompt(c, pr_number, repo)
+        open_in_claude(prompt)
+
+    @kb.add("y")
+    def _(event):
+        c = comments[selected[0]]
+        prompt = format_claude_prompt(c, pr_number, repo)
+        copy_to_clipboard(prompt)
 
     @kb.add("q")
     @kb.add("escape")
@@ -337,9 +394,9 @@ def main() -> None:
         sys.exit(0)
 
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
-    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, q to quit[/]\n")
+    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c for claude, y to copy, q to quit[/]\n")
 
-    run_selector(comments)
+    run_selector(comments, pr_number, f"{owner}/{repo}")
 
 
 if __name__ == "__main__":
