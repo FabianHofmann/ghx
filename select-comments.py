@@ -217,21 +217,23 @@ def open_in_zed(file: str, line: int | None) -> None:
         subprocess.run(["zed", file])
 
 
-def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
-    line_info = f"line {comment['line']}" if comment["line"] else "no specific line"
-    result = (
-        f"PR #{pr_number} in {repo}\n"
-        f"File: {comment['path']} ({line_info})\n"
-        f"Review comment by @{comment['author']}:\n\n"
-        f"{comment['body']}"
-    )
+def format_claude_command(comment: dict, pr_number: int, repo: str) -> str:
+    line_info = f"line {comment['line']}" if comment["line"] else "unknown line"
+    location = f"{comment['path']}:{comment['line']}" if comment["line"] else comment["path"]
+
+    thread = f"@{comment['author']}: {comment['body']}"
     for reply in comment.get("replies", []):
-        result += f"\n\n↳ @{reply['author']}:\n{reply['body']}"
-    return result
+        thread += f"\n\n↳ @{reply['author']}: {reply['body']}"
 
-
-def open_in_claude(prompt: str) -> None:
-    subprocess.Popen(["gnome-terminal", "--", "claude", prompt])
+    prompt = (
+        f"Address this PR review comment on {repo} PR #{pr_number}.\\n\\n"
+        f"Location: {location} ({line_info})\\n\\n"
+        f"--- Comment thread ---\\n{thread}\\n--- End of thread ---\\n\\n"
+        f"Read the file, understand the reviewer's feedback, and make the necessary changes. "
+        f"If the comment is a question or suggestion, evaluate it and respond appropriately."
+    )
+    escaped = prompt.replace("'", "'\\''")
+    return f"claude $'{escaped}'"
 
 
 def copy_to_clipboard(text: str) -> None:
@@ -316,9 +318,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
             ("class:footer-key", "c "),
-            ("class:footer", "claude  "),
-            ("class:footer-key", "y "),
-            ("class:footer", "copy  "),
+            ("class:footer", "claude+copy  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
@@ -353,14 +353,9 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
     @kb.add("c")
     def _(event):
         c = comments[selected[0]]
-        prompt = format_claude_prompt(c, pr_number, repo)
-        open_in_claude(prompt)
-
-    @kb.add("y")
-    def _(event):
-        c = comments[selected[0]]
-        prompt = format_claude_prompt(c, pr_number, repo)
-        copy_to_clipboard(prompt)
+        cmd = format_claude_command(c, pr_number, repo)
+        copy_to_clipboard(cmd)
+        open_in_zed(c["path"], c["line"])
 
     @kb.add("q")
     @kb.add("escape")
@@ -405,7 +400,7 @@ def main() -> None:
         sys.exit(0)
 
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
-    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c for claude, y to copy, q to quit[/]\n")
+    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c to open+copy claude cmd, q to quit[/]\n")
 
     run_selector(comments, pr_number, f"{owner}/{repo}")
 
