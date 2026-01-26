@@ -1,0 +1,37 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Standalone Python CLI scripts for GitHub PR workflows using `uv run` with PEP 723 inline script metadata. Each script is self-contained with its dependencies declared inline.
+
+## Running Scripts
+
+Scripts are executed directly via `uv run`:
+```bash
+./open-pr.py          # Opens current branch's PR in browser
+./checkout-pr.py      # Interactive PR selector and checkout
+./checkout-pr.py -m   # Show only PRs authored by current user
+./select-comments.py  # Browse unresolved PR comments, open in Zed
+```
+
+## Architecture
+
+**Script Pattern**: Each script uses the shebang `#!/usr/bin/env -S uv run` with inline dependency declarations:
+```python
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["prompt_toolkit", "rich"]
+# ///
+```
+
+**External Dependencies**:
+- `gh` CLI for all GitHub API interactions
+- `zed` editor for opening files from `select-comments.py`
+
+**UI Pattern**: Interactive scripts use `prompt_toolkit` with Monokai-style themes for TUI selectors with vim-style navigation (j/k/↑/↓).
+
+**Usage**: 
+
+The scripts are referenced in ~/.zshrc with aliases in the section beginning with `# EDITOR-SCRIPT-ALIASES` following the pattern `alias <short-command>=<script_path>`. Adjust relevant aliases as needed. Make sure the scripts are executable (`chmod +x <script_path>`).
