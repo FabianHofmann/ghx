@@ -160,7 +160,10 @@ def get_token_color(token_type) -> str:
 def highlight_line(line: str, lexer, is_highlighted: bool) -> list[tuple[str, str]]:
     result = []
     bg = " bg:#49483e" if is_highlighted else ""
-    for token_type, token_value in lex(line, lexer):
+    for token_type, token_value in lex(line.rstrip('\n\r'), lexer):
+        token_value = token_value.rstrip('\n\r')
+        if not token_value:
+            continue
         color = get_token_color(token_type)
         result.append((f"{color}{bg}", token_value))
     return result
@@ -198,12 +201,11 @@ def get_code_snippet(file_path: str, target_line: int | None, context: int = 3) 
             result.append(("class:snippet-highlight-num", f"{line_num:4d} "))
             result.append(("#f8f8f2 bg:#49483e", "│ "))
             result.extend(highlight_line(line_content, lexer, True))
-            result.append(("bg:#49483e", "\n"))
         else:
             result.append(("class:snippet-num", f"{line_num:4d} "))
             result.append(("class:snippet", "│ "))
             result.extend(highlight_line(line_content, lexer, False))
-            result.append(("", "\n"))
+        result.append(("", "\n"))
 
     return result
 
