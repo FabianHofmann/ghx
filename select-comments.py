@@ -235,7 +235,7 @@ def open_in_zed(file: str, line: int | None) -> None:
         subprocess.run(["zed", file])
 
 
-def format_claude_command(comment: dict, pr_number: int, repo: str) -> str:
+def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
     line_info = f"line {comment['line']}" if comment["line"] else "unknown line"
     location = f"{comment['path']}:{comment['line']}" if comment["line"] else comment["path"]
 
@@ -243,15 +243,18 @@ def format_claude_command(comment: dict, pr_number: int, repo: str) -> str:
     for reply in comment.get("replies", []):
         thread += f"\n\n↳ @{reply['author']}: {reply['body']}"
 
-    prompt = (
-        f"Address this PR review comment on {repo} PR #{pr_number}.\\n\\n"
-        f"Location: {location} ({line_info})\\n\\n"
-        f"--- Comment thread ---\\n{thread}\\n--- End of thread ---\\n\\n"
-        f"Read the file, understand the reviewer's feedback, and make the necessary changes. "
-        f"If the comment is a question or suggestion, evaluate it and respond appropriately."
-    )
+    prompt = f"""Address this PR review comment on {repo} PR #{pr_number}.
+
+Location: {location} ({line_info})
+
+--- Comment thread ---
+{thread}
+--- End of thread ---
+
+Read the file, understand the reviewer's feedback, and make the necessary changes. If the comment is a question or suggestion, evaluate it and respond appropriately."""
+
     escaped = prompt.replace("'", "'\\''")
-    return f"claude $'{escaped}'"
+    return f"cldy '{escaped}'"
 
 
 def copy_to_clipboard(text: str) -> None:
@@ -307,18 +310,26 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
         return lines
 
     def get_snippet_header():
+        if not comments:
+            return []
         c = comments[selected[0]]
         return [("class:comment-header", f"  Code Preview: {c['path']}\n")]
 
     def get_snippet_text():
+        if not comments:
+            return []
         c = comments[selected[0]]
         return get_code_snippet(c["path"], c["line"])
 
     def get_comment_header():
+        if not comments:
+            return []
         c = comments[selected[0]]
         return [("class:comment-header", f"  Comment by @{c['author']}:\n")]
 
     def get_body_text():
+        if not comments:
+            return []
         c = comments[selected[0]]
         result = [("class:comment-body", c["body"])]
         for reply in c.get("replies", []):
@@ -336,7 +347,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
             ("class:footer-key", "c "),
-            ("class:footer", "copy  "),
+            ("class:footer", "copy prompt "),
             ("class:footer-key", "r "),
             ("class:footer", "resolve  "),
             ("class:footer-key", "q/Esc "),
@@ -367,18 +378,24 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
 
     @kb.add("enter")
     def _(event):
+        if not comments:
+            return
         c = comments[selected[0]]
         open_in_zed(c["path"], c["line"])
 
     @kb.add("c")
     def _(event):
+        if not comments:
+            return
         c = comments[selected[0]]
-        cmd = format_claude_command(c, pr_number, repo)
-        copy_to_clipboard(cmd)
+        prompt = format_claude_prompt(c, pr_number, repo)
+        copy_to_clipboard(prompt)
         open_in_zed(c["path"], c["line"])
 
     @kb.add("r")
     def _(event):
+        if not comments:
+            return
         c = comments[selected[0]]
         if resolve_thread(c["thread_id"]):
             comments.pop(selected[0])
