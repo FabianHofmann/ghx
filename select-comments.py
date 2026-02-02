@@ -93,6 +93,7 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
         pullRequest(number: $pr) {
           reviewThreads(first: 100) {
             nodes {
+              id
               isResolved
               path
               line
@@ -139,6 +140,7 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
             ]
             line = thread["line"] or thread["originalLine"]
             comments.append({
+                "thread_id": thread["id"],
                 "path": thread["path"],
                 "line": line,
                 "outdated": thread["line"] is None and thread["originalLine"] is not None,
@@ -147,6 +149,22 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
                 "replies": all_comments[1:],
             })
     return comments
+
+
+def resolve_thread(thread_id: str) -> bool:
+    mutation = """
+    mutation($threadId: ID!) {
+      resolveReviewThread(input: {threadId: $threadId}) {
+        thread { isResolved }
+      }
+    }
+    """
+    result = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={mutation}", "-F", f"threadId={thread_id}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def get_token_color(token_type) -> str:
@@ -318,7 +336,9 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
             ("class:footer-key", "c "),
-            ("class:footer", "claude+copy  "),
+            ("class:footer", "copy  "),
+            ("class:footer-key", "r "),
+            ("class:footer", "resolve  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
@@ -356,6 +376,17 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
         cmd = format_claude_command(c, pr_number, repo)
         copy_to_clipboard(cmd)
         open_in_zed(c["path"], c["line"])
+
+    @kb.add("r")
+    def _(event):
+        c = comments[selected[0]]
+        if resolve_thread(c["thread_id"]):
+            comments.pop(selected[0])
+            if not comments:
+                event.app.exit()
+            elif selected[0] >= len(comments):
+                selected[0] = len(comments) - 1
+            adjust_scroll()
 
     @kb.add("q")
     @kb.add("escape")
@@ -400,7 +431,7 @@ def main() -> None:
         sys.exit(0)
 
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
-    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c to open+copy claude cmd, q to quit[/]\n")
+    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c to copy, r to resolve, q to quit[/]\n")
 
     run_selector(comments, pr_number, f"{owner}/{repo}")
 
