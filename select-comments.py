@@ -235,23 +235,36 @@ def open_in_zed(file: str, line: int | None) -> None:
         subprocess.run(["zed", file])
 
 
-def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
+def format_comment_thread(comment: dict) -> str:
     line_info = f"line {comment['line']}" if comment["line"] else "unknown line"
     location = f"{comment['path']}:{comment['line']}" if comment["line"] else comment["path"]
-
     thread = f"@{comment['author']}: {comment['body']}"
     for reply in comment.get("replies", []):
         thread += f"\n\n↳ @{reply['author']}: {reply['body']}"
+    return f"Location: {location} ({line_info})\n\n{thread}"
 
+
+def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
     prompt = f"""Address this PR review comment on {repo} PR #{pr_number}.
 
-Location: {location} ({line_info})
-
---- Comment thread ---
-{thread}
---- End of thread ---
+{format_comment_thread(comment)}
 
 Read the file, understand the reviewer's feedback, and make the necessary changes. If the comment is a question or suggestion, evaluate it and respond appropriately."""
+
+    escaped = prompt.replace("'", "'\\''")
+    return f"cldy '{escaped}'"
+
+
+def format_claude_prompt_multi(comments: list[dict], pr_number: int, repo: str) -> str:
+    if len(comments) == 1:
+        return format_claude_prompt(comments[0], pr_number, repo)
+
+    threads = "\n\n---\n\n".join(format_comment_thread(c) for c in comments)
+    prompt = f"""Address these {len(comments)} PR review comments on {repo} PR #{pr_number}.
+
+{threads}
+
+Read the files, understand the reviewer's feedback, and make the necessary changes. If a comment is a question or suggestion, evaluate it and respond appropriately."""
 
     escaped = prompt.replace("'", "'\\''")
     return f"cldy '{escaped}'"
@@ -262,20 +275,22 @@ def copy_to_clipboard(text: str) -> None:
 
 
 def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
-    selected = [0]
+    cursor = [0]
+    selected: set[int] = set()
     scroll_offset = [0]
     visible_count = min(len(comments), 10)
 
     def adjust_scroll():
-        if selected[0] < scroll_offset[0]:
-            scroll_offset[0] = selected[0]
-        elif selected[0] >= scroll_offset[0] + visible_count:
-            scroll_offset[0] = selected[0] - visible_count + 1
+        if cursor[0] < scroll_offset[0]:
+            scroll_offset[0] = cursor[0]
+        elif cursor[0] >= scroll_offset[0] + visible_count:
+            scroll_offset[0] = cursor[0] - visible_count + 1
 
     def get_header():
+        sel_info = f", {len(selected)} selected" if selected else ""
         return [
             ("class:header", "  PR Comments "),
-            ("class:border", f"({len(comments)} unresolved)\n"),
+            ("class:border", f"({len(comments)} unresolved{sel_info})\n"),
         ]
 
     def get_list_text():
@@ -284,14 +299,17 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
         end = min(start + visible_count, len(comments))
         for i in range(start, end):
             c = comments[i]
-            is_sel = i == selected[0]
-            prefix = " ▶ " if is_sel else "   "
+            is_cursor = i == cursor[0]
+            is_selected = i in selected
+            marker = "●" if is_selected else " "
+            pointer = "▶" if is_cursor else " "
+            prefix = f" {marker}{pointer} "
             if c["line"]:
                 line_str = f"~L{c['line']}" if c.get("outdated") else f"L{c['line']}"
             else:
                 line_str = "L?"
 
-            if is_sel:
+            if is_cursor:
                 lines.append(("class:sel-prefix", prefix))
                 lines.append(("class:sel-path", c["path"]))
                 lines.append(("class:sel-prefix", ":"))
@@ -312,25 +330,25 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
     def get_snippet_header():
         if not comments:
             return []
-        c = comments[selected[0]]
+        c = comments[cursor[0]]
         return [("class:comment-header", f"  Code Preview: {c['path']}\n")]
 
     def get_snippet_text():
         if not comments:
             return []
-        c = comments[selected[0]]
+        c = comments[cursor[0]]
         return get_code_snippet(c["path"], c["line"])
 
     def get_comment_header():
         if not comments:
             return []
-        c = comments[selected[0]]
+        c = comments[cursor[0]]
         return [("class:comment-header", f"  Comment by @{c['author']}:\n")]
 
     def get_body_text():
         if not comments:
             return []
-        c = comments[selected[0]]
+        c = comments[cursor[0]]
         result = [("class:comment-body", c["body"])]
         for reply in c.get("replies", []):
             result.append(("", "\n\n"))
@@ -340,17 +358,17 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
 
     def get_footer():
         return [
-            ("class:footer-key", " ↑/k "),
-            ("class:footer", "up  "),
-            ("class:footer-key", "↓/j "),
-            ("class:footer", "down  "),
+            ("class:footer-key", " j/k "),
+            ("class:footer", "nav  "),
+            ("class:footer-key", "Space "),
+            ("class:footer", "select  "),
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
             ("class:footer-key", "c "),
-            ("class:footer", "copy prompt "),
+            ("class:footer", "copy  "),
             ("class:footer-key", "r "),
             ("class:footer", "resolve  "),
-            ("class:footer-key", "q/Esc "),
+            ("class:footer-key", "q "),
             ("class:footer", "quit"),
         ]
 
@@ -367,43 +385,54 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
     @kb.add("up")
     @kb.add("k")
     def _(event):
-        selected[0] = max(0, selected[0] - 1)
+        cursor[0] = max(0, cursor[0] - 1)
         adjust_scroll()
 
     @kb.add("down")
     @kb.add("j")
     def _(event):
-        selected[0] = min(len(comments) - 1, selected[0] + 1)
+        cursor[0] = min(len(comments) - 1, cursor[0] + 1)
         adjust_scroll()
+
+    @kb.add("space")
+    @kb.add("x")
+    def _(event):
+        if not comments:
+            return
+        if cursor[0] in selected:
+            selected.discard(cursor[0])
+        else:
+            selected.add(cursor[0])
 
     @kb.add("enter")
     def _(event):
         if not comments:
             return
-        c = comments[selected[0]]
+        c = comments[cursor[0]]
         open_in_zed(c["path"], c["line"])
 
     @kb.add("c")
     def _(event):
         if not comments:
             return
-        c = comments[selected[0]]
-        prompt = format_claude_prompt(c, pr_number, repo)
+        indices = sorted(selected) if selected else [cursor[0]]
+        prompt = format_claude_prompt_multi([comments[i] for i in indices], pr_number, repo)
         copy_to_clipboard(prompt)
-        open_in_zed(c["path"], c["line"])
 
     @kb.add("r")
     def _(event):
         if not comments:
             return
-        c = comments[selected[0]]
-        if resolve_thread(c["thread_id"]):
-            comments.pop(selected[0])
-            if not comments:
-                event.app.exit()
-            elif selected[0] >= len(comments):
-                selected[0] = len(comments) - 1
-            adjust_scroll()
+        indices = sorted(selected, reverse=True) if selected else [cursor[0]]
+        for i in indices:
+            if resolve_thread(comments[i]["thread_id"]):
+                comments.pop(i)
+        selected.clear()
+        if not comments:
+            event.app.exit()
+        elif cursor[0] >= len(comments):
+            cursor[0] = len(comments) - 1
+        adjust_scroll()
 
     @kb.add("q")
     @kb.add("escape")
@@ -448,7 +477,7 @@ def main() -> None:
         sys.exit(0)
 
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
-    console.print("[#88846f]↑/↓ or j/k to navigate, Enter to open, c to copy, r to resolve, q to quit[/]\n")
+    console.print("[#88846f]j/k nav, Space select, Enter open, c copy, r resolve, q quit[/]\n")
 
     run_selector(comments, pr_number, f"{owner}/{repo}")
 
