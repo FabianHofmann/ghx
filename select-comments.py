@@ -252,7 +252,7 @@ def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
 Read the file, understand the reviewer's feedback, and make the necessary changes. If the comment is a question or suggestion, evaluate it and respond appropriately."""
 
     escaped = prompt.replace("'", "'\\''")
-    return f"cldy '{escaped}'"
+    return f"co '{escaped}'"
 
 
 def format_claude_prompt_multi(comments: list[dict], pr_number: int, repo: str) -> str:
@@ -267,7 +267,7 @@ def format_claude_prompt_multi(comments: list[dict], pr_number: int, repo: str) 
 Read the files, understand the reviewer's feedback, and make the necessary changes. If a comment is a question or suggestion, evaluate it and respond appropriately."""
 
     escaped = prompt.replace("'", "'\\''")
-    return f"cldy '{escaped}'"
+    return f"co '{escaped}'"
 
 
 def copy_to_clipboard(text: str) -> None:
