@@ -6,6 +6,7 @@
 import subprocess
 import json
 import sys
+import shutil
 from pathlib import Path
 from prompt_toolkit import Application, prompt as pt_prompt
 from prompt_toolkit.key_binding import KeyBindings
@@ -45,10 +46,14 @@ MONOKAI_STYLE = Style.from_dict({
     "item-path": "#66d9ef",
     "item-line": "#ae81ff",
     "item-author": "#fd971f",
-    "sel-prefix": "#a6e22e bold",
-    "sel-path": "#66d9ef bold",
-    "sel-line": "#ae81ff bold",
-    "sel-author": "#fd971f bold",
+    "item-state": "#a6e22e",
+    "sel-prefix": "#a6e22e bold bg:#3a3d34",
+    "sel-path": "#66d9ef bold bg:#3a3d34",
+    "sel-line": "#ae81ff bold bg:#3a3d34",
+    "sel-author": "#fd971f bold bg:#3a3d34",
+    "sel-state": "#a6e22e bold bg:#3a3d34",
+    "col-header": "#e5da74 bold",
+    "col-header-dim": "#75715e",
     "border": "#75715e",
     "header": "#e5da74 bold",
     "snippet": "#f8f8f2",
@@ -56,11 +61,19 @@ MONOKAI_STYLE = Style.from_dict({
     "snippet-highlight": "#f8f8f2 bg:#49483e",
     "snippet-highlight-num": "#e5da74 bg:#49483e bold",
     "snippet-dim": "#88846f italic",
-    "comment-body": "#a6e22e",
+    "comment-body": "#c6c3b4",
     "comment-header": "#e5da74 bold",
     "footer": "#88846f",
     "footer-key": "#e5da74 bold",
 })
+
+
+def ellipsize(text: str, width: int) -> str:
+    if width <= 1:
+        return text[:width]
+    if len(text) <= width:
+        return text
+    return text[:width - 1] + "…"
 
 
 def get_repo_info() -> tuple[str, str]:
@@ -302,6 +315,13 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
     scroll_offset = [0]
     visible_count = min(len(comments), 10)
     action: list[dict | None] = [None]
+    terminal_width = shutil.get_terminal_size((120, 30)).columns
+
+    col_line = 6
+    col_author = min(24, max(10, max(len(c["author"]) for c in comments)))
+    col_state = 10
+    fixed = 4 + col_line + 3 + col_author + 2 + col_state
+    col_path = max(24, min(80, terminal_width - fixed))
 
     def adjust_scroll():
         if cursor[0] < scroll_offset[0]:
@@ -311,13 +331,26 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
 
     def get_header():
         sel_info = f", {len(selected)} selected" if selected else ""
+        start = scroll_offset[0] + 1
+        end = min(scroll_offset[0] + visible_count, len(comments))
         return [
             ("class:header", "  PR Comments "),
-            ("class:border", f"({len(comments)} unresolved{sel_info})\n"),
+            ("class:border", f"({len(comments)} unresolved{sel_info}, showing {start}-{end})\n"),
         ]
 
     def get_list_text():
         lines = []
+        lines.append(("class:col-header", "     Path"))
+        lines.append(("class:col-header-dim", " " * max(1, col_path - 4)))
+        lines.append(("class:col-header", "  Line"))
+        lines.append(("class:col-header-dim", " " * max(1, col_line - 4)))
+        lines.append(("class:col-header", "  Author"))
+        lines.append(("class:col-header-dim", " " * max(1, col_author - 6)))
+        lines.append(("class:col-header", "  Status\n"))
+        lines.append((
+            "class:col-header-dim",
+            f"     {'─' * col_path}  {'─' * col_line}  {'─' * col_author}  {'─' * col_state}\n",
+        ))
         start = scroll_offset[0]
         end = min(start + visible_count, len(comments))
         for i in range(start, end):
@@ -331,22 +364,36 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
                 line_str = f"~L{c['line']}" if c.get("outdated") else f"L{c['line']}"
             else:
                 line_str = "L?"
+            line = f"{line_str:<{col_line}}"
+            path = ellipsize(c["path"], col_path).ljust(col_path)
+            author = c["author"].ljust(col_author)
+            if c["line"] is None:
+                state_style, state_text = "detail-value", "unknown"
+            elif c.get("outdated"):
+                state_style, state_text = "detail-label", "outdated"
+            else:
+                state_style, state_text = "item-state", "current"
+            state = f"{state_text:<{col_state}}"
 
             if is_cursor:
                 lines.append(("class:sel-prefix", prefix))
-                lines.append(("class:sel-path", c["path"]))
-                lines.append(("class:sel-prefix", ":"))
-                lines.append(("class:sel-line", line_str))
-                lines.append(("class:sel-prefix", " @"))
-                lines.append(("class:sel-author", c["author"]))
+                lines.append(("class:sel-path", path))
+                lines.append(("class:sel-prefix", "   "))
+                lines.append(("class:sel-line", line))
+                lines.append(("class:sel-prefix", "   @"))
+                lines.append(("class:sel-author", author))
+                lines.append(("class:sel-prefix", "   "))
+                lines.append(("class:sel-state", state))
                 lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
-                lines.append(("class:item-path", c["path"]))
-                lines.append(("class:item", ":"))
-                lines.append(("class:item-line", line_str))
-                lines.append(("class:item", " @"))
-                lines.append(("class:item-author", c["author"]))
+                lines.append(("class:item-path", path))
+                lines.append(("class:item", "   "))
+                lines.append(("class:item-line", line))
+                lines.append(("class:item", "   @"))
+                lines.append(("class:item-author", author))
+                lines.append(("class:item", "   "))
+                lines.append((f"class:{state_style}", state))
                 lines.append(("class:item", "\n"))
         return lines
 
@@ -486,7 +533,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
     def _(event):
         event.app.exit()
 
-    list_height = visible_count
+    list_height = visible_count + 1
 
     layout = Layout(
         HSplit([

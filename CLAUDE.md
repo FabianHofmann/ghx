@@ -14,6 +14,7 @@ Scripts are executed directly via `uv run`:
 ./checkout-pr.py      # Interactive PR selector and checkout
 ./checkout-pr.py -m   # Show only PRs authored by current user
 ./select-comments.py  # Browse unresolved PR comments, open in Zed
+./notifications.py    # Show unread notifications
 ```
 
 ## Architecture

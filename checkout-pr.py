@@ -7,6 +7,7 @@ import argparse
 import subprocess
 import json
 import sys
+import shutil
 from prompt_toolkit import Application
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Layout, HSplit, Window
@@ -23,12 +24,15 @@ MONOKAI_STYLE = Style.from_dict({
     "item-author": "#fd971f",
     "item-state": "#a6e22e",
     "item-draft": "#88846f italic",
-    "sel-prefix": "#a6e22e bold",
-    "sel-number": "#a6e22e bold",
-    "sel-title": "#f8f8f2 bold",
-    "sel-branch": "#66d9ef bold",
-    "sel-author": "#fd971f bold",
-    "sel-draft": "#88846f bold italic",
+    "sel-prefix": "#a6e22e bold bg:#3a3d34",
+    "sel-number": "#a6e22e bold bg:#3a3d34",
+    "sel-title": "#f8f8f2 bold bg:#3a3d34",
+    "sel-branch": "#66d9ef bold bg:#3a3d34",
+    "sel-author": "#fd971f bold bg:#3a3d34",
+    "sel-draft": "#88846f bold italic bg:#3a3d34",
+    "sel-state": "#a6e22e bold bg:#3a3d34",
+    "col-header": "#e5da74 bold",
+    "col-header-dim": "#75715e",
     "border": "#75715e",
     "header": "#e5da74 bold",
     "detail-label": "#e5da74",
@@ -36,6 +40,27 @@ MONOKAI_STYLE = Style.from_dict({
     "footer": "#88846f",
     "footer-key": "#e5da74 bold",
 })
+
+
+def ellipsize(text: str, width: int) -> str:
+    if width <= 1:
+        return text[:width]
+    if len(text) <= width:
+        return text
+    return text[:width - 1] + "…"
+
+
+def status_text(pr: dict) -> tuple[str, str]:
+    if pr["isDraft"]:
+        return "item-draft", "draft"
+    review = pr.get("reviewDecision") or "PENDING"
+    if review == "APPROVED":
+        return "item-state", "approved"
+    if review == "CHANGES_REQUESTED":
+        return "item-author", "changes"
+    if review == "REVIEW_REQUIRED":
+        return "detail-label", "review"
+    return "detail-value", "pending"
 
 
 def get_prs(mine_only: bool = False) -> list[dict]:
@@ -60,10 +85,13 @@ def run_selector(prs: list[dict]) -> None:
     selected = [0]
     scroll_offset = [0]
     visible_count = min(len(prs), 12)
+    terminal_width = shutil.get_terminal_size((120, 30)).columns
     col_num = 6
-    col_title = max(len(pr["title"][:50]) for pr in prs)
-    col_branch = max(len(pr["headRefName"][:30]) for pr in prs)
-    col_author = max(len(pr["author"]["login"]) for pr in prs)
+    col_branch = min(24, max(10, max(len(pr["headRefName"]) for pr in prs)))
+    col_author = min(22, max(10, max(len(pr["author"]["login"]) for pr in prs)))
+    col_status = 10
+    fixed = 3 + col_num + 1 + 2 + col_branch + 3 + col_author + 2 + col_status
+    col_title = max(18, min(60, terminal_width - fixed))
 
     def adjust_scroll():
         if selected[0] < scroll_offset[0]:
@@ -72,13 +100,26 @@ def run_selector(prs: list[dict]) -> None:
             scroll_offset[0] = selected[0] - visible_count + 1
 
     def get_header():
+        start = scroll_offset[0] + 1
+        end = min(scroll_offset[0] + visible_count, len(prs))
         return [
             ("class:header", "  Pull Requests "),
-            ("class:border", f"({len(prs)} open)\n"),
+            ("class:border", f"({len(prs)} open, showing {start}-{end})\n"),
         ]
 
     def get_list_text():
         lines = []
+        lines.append(("class:col-header", "    #     Title"))
+        lines.append(("class:col-header-dim", " " * max(1, col_title - 5)))
+        lines.append(("class:col-header", "  Branch"))
+        lines.append(("class:col-header-dim", " " * max(1, col_branch - 6)))
+        lines.append(("class:col-header", "  Author"))
+        lines.append(("class:col-header-dim", " " * max(1, col_author - 6)))
+        lines.append(("class:col-header", "  Status\n"))
+        lines.append((
+            "class:col-header-dim",
+            f"    {'─' * col_num} {'─' * col_title}  {'─' * col_branch}  {'─' * col_author}  {'─' * col_status}\n",
+        ))
         start = scroll_offset[0]
         end = min(start + visible_count, len(prs))
         for i in range(start, end):
@@ -86,31 +127,33 @@ def run_selector(prs: list[dict]) -> None:
             is_sel = i == selected[0]
             prefix = " ▶ " if is_sel else "   "
             num = f"#{pr['number']:<{col_num}}"
-            title = pr["title"][:50].ljust(col_title)
-            branch = pr["headRefName"][:30].ljust(col_branch)
+            title = ellipsize(pr["title"], col_title).ljust(col_title)
+            branch = ellipsize(pr["headRefName"], col_branch).ljust(col_branch)
             author = pr["author"]["login"].ljust(col_author)
+            status_style, status_label = status_text(pr)
+            status = f"{status_label:<{col_status}}"
 
             if is_sel:
                 lines.append(("class:sel-prefix", prefix))
                 lines.append(("class:sel-number", num))
-                lines.append(("class:sel-title", f" {title}  "))
+                lines.append(("class:sel-title", f" {title}   "))
                 lines.append(("class:sel-branch", branch))
-                lines.append(("class:sel-title", "  @"))
+                lines.append(("class:sel-title", "   @"))
                 lines.append(("class:sel-author", author))
-                if pr["isDraft"]:
-                    lines.append(("class:sel-draft", " [draft]"))
+                lines.append(("class:sel-title", "   "))
+                lines.append((f"class:sel-state", status))
                 lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:item-number", num))
                 lines.append(("class:item", " "))
                 lines.append(("class:item-title", title))
-                lines.append(("class:item", "  "))
+                lines.append(("class:item", "   "))
                 lines.append(("class:item-branch", branch))
-                lines.append(("class:item", "  @"))
+                lines.append(("class:item", "   @"))
                 lines.append(("class:item-author", author))
-                if pr["isDraft"]:
-                    lines.append(("class:item-draft", " [draft]"))
+                lines.append(("class:item", "   "))
+                lines.append((f"class:{status_style}", status))
                 lines.append(("class:item", "\n"))
         return lines
 
@@ -199,7 +242,7 @@ def run_selector(prs: list[dict]) -> None:
     def _(event):
         event.app.exit(result=None)
 
-    list_height = visible_count
+    list_height = visible_count + 1
 
     layout = Layout(
         HSplit([

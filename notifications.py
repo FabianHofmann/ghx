@@ -6,6 +6,7 @@
 import subprocess
 import json
 import sys
+import shutil
 from datetime import datetime, timezone
 from prompt_toolkit import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -21,12 +22,16 @@ MONOKAI_STYLE = Style.from_dict({
     "item-repo": "#66d9ef",
     "item-reason": "#fd971f",
     "item-time": "#88846f",
-    "sel-prefix": "#a6e22e bold",
-    "sel-title": "#f8f8f2 bold",
-    "sel-type": "#ae81ff bold",
-    "sel-repo": "#66d9ef bold",
-    "sel-reason": "#fd971f bold",
-    "sel-time": "#88846f bold",
+    "sel-prefix": "#a6e22e bold bg:#3a3d34",
+    "sel-title": "#f8f8f2 bold bg:#3a3d34",
+    "sel-type": "#ae81ff bold bg:#3a3d34",
+    "sel-repo": "#66d9ef bold bg:#3a3d34",
+    "sel-reason": "#fd971f bold bg:#3a3d34",
+    "sel-time": "#88846f bold bg:#3a3d34",
+    "col-header": "#e5da74 bold",
+    "col-header-dim": "#75715e",
+    "chip-type": "#c7b6ff bg:#343142 bold",
+    "chip-reason": "#ffc58f bg:#443628 bold",
     "border": "#75715e",
     "header": "#e5da74 bold",
     "detail-label": "#e5da74",
@@ -55,6 +60,14 @@ REASON_LABELS = {
     "assign": "assigned",
     "team_mention": "team mention",
 }
+
+
+def ellipsize(text: str, width: int) -> str:
+    if width <= 1:
+        return text[:width]
+    if len(text) <= width:
+        return text
+    return text[:width - 1] + "…"
 
 
 def relative_time(iso_str: str) -> str:
@@ -115,11 +128,14 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
     selected = [0]
     scroll_offset = [0]
     visible_count = min(len(notifications), 12)
+    terminal_width = shutil.get_terminal_size((120, 30)).columns
 
-    col_type = 5
-    col_title = min(60, max(len(n["subject"]["title"][:60]) for n in notifications))
-    col_repo = max(len(n["repository"]["full_name"]) for n in notifications) if all_repos else 0
-    col_reason = max(len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications)
+    col_type = 10
+    col_reason = min(14, max(7, max(len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications)))
+    col_repo = min(24, max(10, max(len(n["repository"]["full_name"]) for n in notifications))) if all_repos else 0
+    col_time = 8
+    fixed = 3 + col_type + 1 + 2 + (col_repo + 2 if all_repos else 0) + col_reason + 2 + col_time
+    col_title = max(20, min(64, terminal_width - fixed))
 
     def adjust_scroll():
         if selected[0] < scroll_offset[0]:
@@ -128,13 +144,28 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             scroll_offset[0] = selected[0] - visible_count + 1
 
     def get_header():
+        start = scroll_offset[0] + 1
+        end = min(scroll_offset[0] + visible_count, len(notifications))
         return [
             ("class:header", "  Notifications "),
-            ("class:border", f"({len(notifications)} unread)\n"),
+            ("class:border", f"({len(notifications)} unread, showing {start}-{end})\n"),
         ]
 
     def get_list_text():
         lines = []
+        lines.append(("class:col-header", "    Type  Title"))
+        lines.append(("class:col-header-dim", " " * max(1, col_title - 5)))
+        if all_repos:
+            lines.append(("class:col-header", "  Repo"))
+            lines.append(("class:col-header-dim", " " * max(1, col_repo - 4)))
+        lines.append(("class:col-header", "  Reason"))
+        lines.append(("class:col-header-dim", " " * max(1, col_reason - 6)))
+        lines.append(("class:col-header", "  When\n"))
+        sep = f"    {'─' * col_type} {'─' * col_title}"
+        if all_repos:
+            sep += f"  {'─' * col_repo}"
+        sep += f"  {'─' * col_reason}  {'─' * col_time}"
+        lines.append(("class:col-header-dim", f"{sep}\n"))
         start = scroll_offset[0]
         end = min(start + visible_count, len(notifications))
         for i in range(start, end):
@@ -142,27 +173,31 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             is_sel = i == selected[0]
             prefix = " ▶ " if is_sel else "   "
             type_label = TYPE_LABELS.get(n["subject"]["type"], n["subject"]["type"][:4])
-            title = n["subject"]["title"][:60].ljust(col_title)
-            repo = n["repository"]["full_name"].ljust(col_repo) if all_repos else ""
-            reason = REASON_LABELS.get(n["reason"], n["reason"]).ljust(col_reason)
+            type_chip = f" {ellipsize(type_label, col_type - 2):<{col_type - 2}} "
+            title = ellipsize(n["subject"]["title"], col_title).ljust(col_title)
+            repo = ellipsize(n["repository"]["full_name"], col_repo).ljust(col_repo) if all_repos else ""
+            reason_label = REASON_LABELS.get(n["reason"], n["reason"])
+            reason_chip = f" {ellipsize(reason_label, col_reason - 2):<{col_reason - 2}} "
             time_str = relative_time(n["updated_at"])
 
             if is_sel:
                 lines.append(("class:sel-prefix", prefix))
-                lines.append(("class:sel-type", f"{type_label:<{col_type}}"))
-                lines.append(("class:sel-title", f"{title}  "))
+                lines.append(("class:chip-type", type_chip))
+                lines.append(("class:sel-title", f" {title}   "))
                 if all_repos:
-                    lines.append(("class:sel-repo", f"{repo}  "))
-                lines.append(("class:sel-reason", f"{reason}  "))
+                    lines.append(("class:sel-repo", f"{repo}   "))
+                lines.append(("class:chip-reason", reason_chip))
+                lines.append(("class:sel-title", "   "))
                 lines.append(("class:sel-time", time_str))
                 lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
-                lines.append(("class:item-type", f"{type_label:<{col_type}}"))
-                lines.append(("class:item", f"{title}  "))
+                lines.append(("class:chip-type", type_chip))
+                lines.append(("class:item", f" {title}   "))
                 if all_repos:
-                    lines.append(("class:item-repo", f"{repo}  "))
-                lines.append(("class:item-reason", f"{reason}  "))
+                    lines.append(("class:item-repo", f"{repo}   "))
+                lines.append(("class:chip-reason", reason_chip))
+                lines.append(("class:item", "   "))
                 lines.append(("class:item-time", time_str))
                 lines.append(("class:item", "\n"))
         return lines
@@ -180,7 +215,7 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             ("class:item-repo", n["repository"]["full_name"]),
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Type: "),
-            ("class:item-type", type_label),
+            ("class:sel-type", type_label),
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Reason: "),
             ("class:item-reason", reason),
@@ -258,7 +293,7 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
     layout = Layout(
         HSplit([
             Window(header_control, height=1),
-            Window(list_control, height=visible_count),
+            Window(list_control, height=visible_count + 1),
             Window(char="─", height=1, style="class:border"),
             Window(detail_header_control, height=1),
             Window(detail_control, height=5),
