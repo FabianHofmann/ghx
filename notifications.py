@@ -28,17 +28,19 @@ MONOKAI_STYLE = Style.from_dict({
     "sel-repo": "#66d9ef bold bg:#3a3d34",
     "sel-reason": "#fd971f bold bg:#3a3d34",
     "sel-time": "#88846f bold bg:#3a3d34",
-    "col-header": "#e5da74 bold",
+    "col-header": "#34D399 bold",
     "col-header-dim": "#75715e",
     "chip-type": "#c7b6ff bg:#343142 bold",
-    "chip-reason": "#ffc58f bg:#443628 bold",
+    "chip-reason": "#c7b6ff bg:#343142 bold",
     "border": "#75715e",
-    "header": "#e5da74 bold",
-    "detail-label": "#e5da74",
+    "header": "#34D399 bold",
+    "detail-label": "#34D399",
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
-    "footer-key": "#e5da74 bold",
+    "footer-key": "#34D399 bold",
 })
+
+ROW_SPACING_EVERY = 0
 
 TYPE_LABELS = {
     "PullRequest": "PR",
@@ -129,12 +131,24 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
     scroll_offset = [0]
     visible_count = min(len(notifications), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    prefix_w = 3
+    title_padding = 4
+    repo_padding = 3
+    reason_padding = 3
 
     col_type = 10
-    col_reason = min(14, max(7, max(len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications)))
+    col_reason = min(26, max(12, max(len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications)))
     col_repo = min(24, max(10, max(len(n["repository"]["full_name"]) for n in notifications))) if all_repos else 0
     col_time = 8
-    fixed = 3 + col_type + 1 + 2 + (col_repo + 2 if all_repos else 0) + col_reason + 2 + col_time
+    fixed = (
+        prefix_w
+        + col_type
+        + title_padding
+        + (col_repo + repo_padding if all_repos else 0)
+        + col_reason
+        + reason_padding
+        + col_time
+    )
     col_title = max(20, min(64, terminal_width - fixed))
 
     def adjust_scroll():
@@ -153,24 +167,22 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
 
     def get_list_text():
         lines = []
-        lines.append(("class:col-header", "    Type  Title"))
-        lines.append(("class:col-header-dim", " " * max(1, col_title - 5)))
+        header_line = f"{'':<{prefix_w}}{'Type':<{col_type}}{'Title':<{col_title + title_padding}}"
         if all_repos:
-            lines.append(("class:col-header", "  Repo"))
-            lines.append(("class:col-header-dim", " " * max(1, col_repo - 4)))
-        lines.append(("class:col-header", "  Reason"))
-        lines.append(("class:col-header-dim", " " * max(1, col_reason - 6)))
-        lines.append(("class:col-header", "  When\n"))
-        sep = f"    {'─' * col_type} {'─' * col_title}"
+            header_line += f"{'Repo':<{col_repo + repo_padding}}"
+        header_line += f"{'Reason':<{col_reason + reason_padding}}{'When':<{col_time}}\n"
+        sep = f"{'':<{prefix_w}}{'─' * col_type}{'─' * (col_title + title_padding)}"
         if all_repos:
-            sep += f"  {'─' * col_repo}"
-        sep += f"  {'─' * col_reason}  {'─' * col_time}"
+            sep += f"{'─' * (col_repo + repo_padding)}"
+        sep += f"{'─' * (col_reason + reason_padding)}{'─' * col_time}"
+        lines.append(("class:col-header", header_line))
         lines.append(("class:col-header-dim", f"{sep}\n"))
         start = scroll_offset[0]
         end = min(start + visible_count, len(notifications))
         for i in range(start, end):
             n = notifications[i]
             is_sel = i == selected[0]
+            row_idx = i - start
             prefix = " ▶ " if is_sel else "   "
             type_label = TYPE_LABELS.get(n["subject"]["type"], n["subject"]["type"][:4])
             type_chip = f" {ellipsize(type_label, col_type - 2):<{col_type - 2}} "
@@ -178,7 +190,7 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             repo = ellipsize(n["repository"]["full_name"], col_repo).ljust(col_repo) if all_repos else ""
             reason_label = REASON_LABELS.get(n["reason"], n["reason"])
             reason_chip = f" {ellipsize(reason_label, col_reason - 2):<{col_reason - 2}} "
-            time_str = relative_time(n["updated_at"])
+            time_col = f"{relative_time(n['updated_at']):<{col_time}}"
 
             if is_sel:
                 lines.append(("class:sel-prefix", prefix))
@@ -188,8 +200,10 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
                     lines.append(("class:sel-repo", f"{repo}   "))
                 lines.append(("class:chip-reason", reason_chip))
                 lines.append(("class:sel-title", "   "))
-                lines.append(("class:sel-time", time_str))
+                lines.append(("class:sel-time", time_col))
                 lines.append(("", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:chip-type", type_chip))
@@ -198,8 +212,10 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
                     lines.append(("class:item-repo", f"{repo}   "))
                 lines.append(("class:chip-reason", reason_chip))
                 lines.append(("class:item", "   "))
-                lines.append(("class:item-time", time_str))
+                lines.append(("class:item-time", time_col))
                 lines.append(("class:item", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
         return lines
 
     def get_detail_header():
@@ -290,10 +306,12 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
     def _(event):
         event.app.exit()
 
+    list_header_lines = 2
+
     layout = Layout(
         HSplit([
             Window(header_control, height=1),
-            Window(list_control, height=visible_count + 1),
+            Window(list_control, height=visible_count + list_header_lines),
             Window(char="─", height=1, style="class:border"),
             Window(detail_header_control, height=1),
             Window(detail_control, height=5),

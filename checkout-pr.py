@@ -31,15 +31,17 @@ MONOKAI_STYLE = Style.from_dict({
     "sel-author": "#fd971f bold bg:#3a3d34",
     "sel-draft": "#88846f bold italic bg:#3a3d34",
     "sel-state": "#a6e22e bold bg:#3a3d34",
-    "col-header": "#e5da74 bold",
+    "col-header": "#34D399 bold",
     "col-header-dim": "#75715e",
     "border": "#75715e",
-    "header": "#e5da74 bold",
-    "detail-label": "#e5da74",
+    "header": "#34D399 bold",
+    "detail-label": "#34D399",
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
-    "footer-key": "#e5da74 bold",
+    "footer-key": "#34D399 bold",
 })
+
+ROW_SPACING_EVERY = 0
 
 
 def ellipsize(text: str, width: int) -> str:
@@ -86,11 +88,27 @@ def run_selector(prs: list[dict]) -> None:
     scroll_offset = [0]
     visible_count = min(len(prs), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    prefix_w = 3
+    gap_num_title = 1
+    gap_title_branch = 3
+    gap_author_status = 3
+    author_prefix = "@"
     col_num = 6
     col_branch = min(24, max(10, max(len(pr["headRefName"]) for pr in prs)))
     col_author = min(22, max(10, max(len(pr["author"]["login"]) for pr in prs)))
     col_status = 10
-    fixed = 3 + col_num + 1 + 2 + col_branch + 3 + col_author + 2 + col_status
+    fixed = (
+        prefix_w
+        + col_num
+        + gap_num_title
+        + gap_title_branch
+        + col_branch
+        + 3
+        + len(author_prefix)
+        + col_author
+        + gap_author_status
+        + col_status
+    )
     col_title = max(18, min(60, terminal_width - fixed))
 
     def adjust_scroll():
@@ -109,52 +127,75 @@ def run_selector(prs: list[dict]) -> None:
 
     def get_list_text():
         lines = []
-        lines.append(("class:col-header", "    #     Title"))
-        lines.append(("class:col-header-dim", " " * max(1, col_title - 5)))
-        lines.append(("class:col-header", "  Branch"))
-        lines.append(("class:col-header-dim", " " * max(1, col_branch - 6)))
-        lines.append(("class:col-header", "  Author"))
-        lines.append(("class:col-header-dim", " " * max(1, col_author - 6)))
-        lines.append(("class:col-header", "  Status\n"))
-        lines.append((
-            "class:col-header-dim",
-            f"    {'─' * col_num} {'─' * col_title}  {'─' * col_branch}  {'─' * col_author}  {'─' * col_status}\n",
-        ))
+        author_header = f"{author_prefix}{'Author':<{max(0, col_author - len(author_prefix))}}"
+        header_line = (
+            f"{'':<{prefix_w}}"
+            f"{'#':<{col_num}}"
+            f"{'':<{gap_num_title}}"
+            f"{'Title':<{col_title}}"
+            f"{'':<{gap_title_branch}}"
+            f"{'Branch':<{col_branch}}"
+            f"{'':<3}"
+            f"{author_header}"
+            f"{'':<{gap_author_status}}"
+            f"{'Status':<{col_status}}\n"
+        )
+        separator_line = (
+            f"{'':<{prefix_w}}"
+            f"{'─' * col_num}"
+            f"{'':<{gap_num_title}}"
+            f"{'─' * col_title}"
+            f"{'':<{gap_title_branch}}"
+            f"{'─' * col_branch}"
+            f"{'':<3}"
+            f"{'─' * (col_author + len(author_prefix))}"
+            f"{'':<{gap_author_status}}"
+            f"{'─' * col_status}\n"
+        )
+        lines.append(("class:col-header", header_line))
+        lines.append(("class:col-header-dim", separator_line))
         start = scroll_offset[0]
         end = min(start + visible_count, len(prs))
         for i in range(start, end):
             pr = prs[i]
             is_sel = i == selected[0]
+            row_idx = i - start
             prefix = " ▶ " if is_sel else "   "
-            num = f"#{pr['number']:<{col_num}}"
+            num = ellipsize(f"#{pr['number']}", col_num).ljust(col_num)
             title = ellipsize(pr["title"], col_title).ljust(col_title)
             branch = ellipsize(pr["headRefName"], col_branch).ljust(col_branch)
-            author = pr["author"]["login"].ljust(col_author)
+            author = ellipsize(pr["author"]["login"], col_author).ljust(col_author)
             status_style, status_label = status_text(pr)
             status = f"{status_label:<{col_status}}"
 
             if is_sel:
                 lines.append(("class:sel-prefix", prefix))
                 lines.append(("class:sel-number", num))
-                lines.append(("class:sel-title", f" {title}   "))
+                lines.append(("class:sel-title", " " * gap_num_title))
+                lines.append(("class:sel-title", title))
+                lines.append(("class:sel-title", " " * gap_title_branch))
                 lines.append(("class:sel-branch", branch))
                 lines.append(("class:sel-title", "   @"))
                 lines.append(("class:sel-author", author))
-                lines.append(("class:sel-title", "   "))
+                lines.append(("class:sel-title", " " * gap_author_status))
                 lines.append((f"class:sel-state", status))
                 lines.append(("", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:item-number", num))
-                lines.append(("class:item", " "))
+                lines.append(("class:item", " " * gap_num_title))
                 lines.append(("class:item-title", title))
-                lines.append(("class:item", "   "))
+                lines.append(("class:item", " " * gap_title_branch))
                 lines.append(("class:item-branch", branch))
                 lines.append(("class:item", "   @"))
                 lines.append(("class:item-author", author))
-                lines.append(("class:item", "   "))
+                lines.append(("class:item", " " * gap_author_status))
                 lines.append((f"class:{status_style}", status))
                 lines.append(("class:item", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
         return lines
 
     def get_detail_header():
@@ -242,7 +283,8 @@ def run_selector(prs: list[dict]) -> None:
     def _(event):
         event.app.exit(result=None)
 
-    list_height = visible_count + 1
+    list_header_lines = 2
+    list_height = visible_count + list_header_lines
 
     layout = Layout(
         HSplit([

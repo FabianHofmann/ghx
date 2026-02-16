@@ -52,20 +52,22 @@ MONOKAI_STYLE = Style.from_dict({
     "sel-line": "#ae81ff bold bg:#3a3d34",
     "sel-author": "#fd971f bold bg:#3a3d34",
     "sel-state": "#a6e22e bold bg:#3a3d34",
-    "col-header": "#e5da74 bold",
+    "col-header": "#34D399 bold",
     "col-header-dim": "#75715e",
     "border": "#75715e",
-    "header": "#e5da74 bold",
+    "header": "#34D399 bold",
     "snippet": "#f8f8f2",
     "snippet-num": "#88846f",
     "snippet-highlight": "#f8f8f2 bg:#49483e",
     "snippet-highlight-num": "#e5da74 bg:#49483e bold",
     "snippet-dim": "#88846f italic",
     "comment-body": "#c6c3b4",
-    "comment-header": "#e5da74 bold",
+    "comment-header": "#34D399 bold",
     "footer": "#88846f",
-    "footer-key": "#e5da74 bold",
+    "footer-key": "#34D399 bold",
 })
+
+ROW_SPACING_EVERY = 0
 
 
 def ellipsize(text: str, width: int) -> str:
@@ -316,11 +318,24 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
     visible_count = min(len(comments), 10)
     action: list[dict | None] = [None]
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    prefix_w = 4
+    gap_path_line = 3
+    gap_author_state = 3
+    author_prefix = "@"
 
     col_line = 6
     col_author = min(24, max(10, max(len(c["author"]) for c in comments)))
     col_state = 10
-    fixed = 4 + col_line + 3 + col_author + 2 + col_state
+    fixed = (
+        prefix_w
+        + col_line
+        + gap_path_line
+        + 3
+        + len(author_prefix)
+        + col_author
+        + gap_author_state
+        + col_state
+    )
     col_path = max(24, min(80, terminal_width - fixed))
 
     def adjust_scroll():
@@ -340,22 +355,35 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
 
     def get_list_text():
         lines = []
-        lines.append(("class:col-header", "     Path"))
-        lines.append(("class:col-header-dim", " " * max(1, col_path - 4)))
-        lines.append(("class:col-header", "  Line"))
-        lines.append(("class:col-header-dim", " " * max(1, col_line - 4)))
-        lines.append(("class:col-header", "  Author"))
-        lines.append(("class:col-header-dim", " " * max(1, col_author - 6)))
-        lines.append(("class:col-header", "  Status\n"))
-        lines.append((
-            "class:col-header-dim",
-            f"     {'─' * col_path}  {'─' * col_line}  {'─' * col_author}  {'─' * col_state}\n",
-        ))
+        author_header = f"{author_prefix}{'Author':<{max(0, col_author - len(author_prefix))}}"
+        header_line = (
+            f"{'':<{prefix_w}}"
+            f"{'Path':<{col_path}}"
+            f"{'':<{gap_path_line}}"
+            f"{'Line':<{col_line}}"
+            f"{'':<3}"
+            f"{author_header}"
+            f"{'':<{gap_author_state}}"
+            f"{'Status':<{col_state}}\n"
+        )
+        separator_line = (
+            f"{'':<{prefix_w}}"
+            f"{'─' * col_path}"
+            f"{'':<{gap_path_line}}"
+            f"{'─' * col_line}"
+            f"{'':<3}"
+            f"{'─' * (col_author + len(author_prefix))}"
+            f"{'':<{gap_author_state}}"
+            f"{'─' * col_state}\n"
+        )
+        lines.append(("class:col-header", header_line))
+        lines.append(("class:col-header-dim", separator_line))
         start = scroll_offset[0]
         end = min(start + visible_count, len(comments))
         for i in range(start, end):
             c = comments[i]
             is_cursor = i == cursor[0]
+            row_idx = i - start
             is_selected = i in selected
             marker = "●" if is_selected else " "
             pointer = "▶" if is_cursor else " "
@@ -366,7 +394,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
                 line_str = "L?"
             line = f"{line_str:<{col_line}}"
             path = ellipsize(c["path"], col_path).ljust(col_path)
-            author = c["author"].ljust(col_author)
+            author = ellipsize(c["author"], col_author).ljust(col_author)
             if c["line"] is None:
                 state_style, state_text = "detail-value", "unknown"
             elif c.get("outdated"):
@@ -385,6 +413,8 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
                 lines.append(("class:sel-prefix", "   "))
                 lines.append(("class:sel-state", state))
                 lines.append(("", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:item-path", path))
@@ -395,6 +425,8 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
                 lines.append(("class:item", "   "))
                 lines.append((f"class:{state_style}", state))
                 lines.append(("class:item", "\n"))
+                if ROW_SPACING_EVERY > 0 and (row_idx + 1) % ROW_SPACING_EVERY == 0:
+                    lines.append(("", "\n"))
         return lines
 
     def get_snippet_header():
@@ -533,7 +565,8 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
     def _(event):
         event.app.exit()
 
-    list_height = visible_count + 1
+    list_header_lines = 2
+    list_height = visible_count + list_header_lines
 
     layout = Layout(
         HSplit([
