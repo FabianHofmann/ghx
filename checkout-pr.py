@@ -157,6 +157,8 @@ def run_selector(prs: list[dict]) -> None:
             ("class:footer", "down  "),
             ("class:footer-key", "Enter "),
             ("class:footer", "checkout  "),
+            ("class:footer-key", "b "),
+            ("class:footer", "browse  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
@@ -180,6 +182,12 @@ def run_selector(prs: list[dict]) -> None:
     def _(event):
         selected[0] = min(len(prs) - 1, selected[0] + 1)
         adjust_scroll()
+
+    @kb.add("b")
+    def _(event):
+        pr = prs[selected[0]]
+        subprocess.Popen(["gh", "pr", "view", str(pr["number"]), "--web"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     @kb.add("enter")
     def _(event):

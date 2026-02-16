@@ -7,7 +7,7 @@ import subprocess
 import json
 import sys
 from pathlib import Path
-from prompt_toolkit import Application
+from prompt_toolkit import Application, prompt as pt_prompt
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -101,6 +101,7 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
               comments(first: 50) {
                 nodes {
                   body
+                  url
                   author { login }
                 }
               }
@@ -138,6 +139,7 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
                 }
                 for c in thread["comments"]["nodes"]
             ]
+            comment_url = first_comment.get("url", "")
             line = thread["line"] or thread["originalLine"]
             comments.append({
                 "thread_id": thread["id"],
@@ -146,6 +148,7 @@ def get_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict]
                 "outdated": thread["line"] is None and thread["originalLine"] is not None,
                 "body": first_comment["body"],
                 "author": first_comment["author"]["login"] if first_comment["author"] else "unknown",
+                "url": comment_url,
                 "replies": all_comments[1:],
             })
     return comments
@@ -161,6 +164,25 @@ def resolve_thread(thread_id: str) -> bool:
     """
     result = subprocess.run(
         ["gh", "api", "graphql", "-f", f"query={mutation}", "-F", f"threadId={thread_id}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def reply_to_thread(thread_id: str, body: str) -> bool:
+    mutation = """
+    mutation($threadId: ID!, $body: String!) {
+      addPullRequestReviewThreadReply(input: {
+        pullRequestReviewThreadId: $threadId,
+        body: $body
+      }) {
+        comment { id }
+      }
+    }
+    """
+    result = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={mutation}", "-F", f"threadId={thread_id}", "-f", f"body={body}"],
         capture_output=True,
         text=True,
     )
@@ -274,11 +296,12 @@ def copy_to_clipboard(text: str) -> None:
     pyperclip.copy(text)
 
 
-def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
+def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None:
     cursor = [0]
     selected: set[int] = set()
     scroll_offset = [0]
     visible_count = min(len(comments), 10)
+    action: list[dict | None] = [None]
 
     def adjust_scroll():
         if cursor[0] < scroll_offset[0]:
@@ -364,6 +387,10 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
             ("class:footer", "select  "),
             ("class:footer-key", "Enter "),
             ("class:footer", "open  "),
+            ("class:footer-key", "b "),
+            ("class:footer", "browser  "),
+            ("class:footer-key", "a "),
+            ("class:footer", "answer  "),
             ("class:footer-key", "c "),
             ("class:footer", "copy  "),
             ("class:footer-key", "r "),
@@ -434,6 +461,26 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
             cursor[0] = len(comments) - 1
         adjust_scroll()
 
+    @kb.add("b")
+    def _(event):
+        if not comments:
+            return
+        c = comments[cursor[0]]
+        if c["url"]:
+            subprocess.Popen(
+                ["xdg-open", c["url"]],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+    @kb.add("a")
+    def _(event):
+        if not comments:
+            return
+        action[0] = {"type": "reply", "index": cursor[0]}
+        event.app.exit()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -458,6 +505,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> None:
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
     app.run()
+    return action[0]
 
 
 def main() -> None:
@@ -477,9 +525,26 @@ def main() -> None:
         sys.exit(0)
 
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
-    console.print("[#88846f]j/k nav, Space select, Enter open, c copy, r resolve, q quit[/]\n")
 
-    run_selector(comments, pr_number, f"{owner}/{repo}")
+    while comments:
+        result = run_selector(comments, pr_number, f"{owner}/{repo}")
+        if not result:
+            break
+        if result["type"] == "reply":
+            c = comments[result["index"]]
+            console.print(f"\n[bold #e5da74]Replying to @{c['author']}[/] on [#66d9ef]{c['path']}:{c['line']}[/]")
+            console.print(f"[#88846f]{c['body'][:200]}[/]\n")
+            try:
+                body = pt_prompt("Reply: ")
+            except (EOFError, KeyboardInterrupt):
+                continue
+            if not body.strip():
+                continue
+            if reply_to_thread(c["thread_id"], body):
+                console.print("[bold #a6e22e]Reply sent[/]\n")
+                c["replies"].append({"body": body, "author": "you"})
+            else:
+                console.print("[bold #f92672]Failed to send reply[/]\n")
 
 
 if __name__ == "__main__":
