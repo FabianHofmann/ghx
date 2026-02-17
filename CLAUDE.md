@@ -11,6 +11,7 @@ Standalone Python CLI scripts for GitHub PR workflows using `uv run` with PEP 72
 Scripts are executed directly via `uv run`:
 ```bash
 ./open-pr.py          # Opens current branch's PR in browser
+./pr-ci.py            # Shows running CI checks for current branch's PR
 ./checkout-pr.py      # Interactive PR selector and checkout
 ./checkout-pr.py -m   # Show only PRs authored by current user
 ./select-comments.py  # Browse unresolved PR comments, open in Zed

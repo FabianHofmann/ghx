@@ -169,9 +169,9 @@ def ellipsize(text: str, width: int) -> str:
     return text[: width - 1] + "…"
 
 
-def make_running_rows(running_checks: list[dict]) -> list[dict]:
+def make_rows(checks: list[dict]) -> list[dict]:
     rows: list[dict] = []
-    for check in running_checks:
+    for check in checks:
         workflow = check_workflow(check).strip() or "-"
         name = check_name(check).strip()
         state = check_state(check) or "UNKNOWN"
@@ -205,9 +205,16 @@ def open_link(url: str) -> bool:
     return webbrowser.open(url)
 
 
-def render_table(console: Console, pr_number: int, rows: list[dict], checks: list[dict], state_counts: Counter) -> None:
+def render_table(
+    console: Console,
+    pr_number: int,
+    rows: list[dict],
+    checks: list[dict],
+    state_counts: Counter,
+    running_count: int,
+) -> None:
     table = Table(
-        title=f"Running CI Checks for PR #{pr_number}",
+        title=f"CI Checks for PR #{pr_number}",
         show_header=True,
         header_style="bold cyan",
         box=None,
@@ -231,7 +238,7 @@ def render_table(console: Console, pr_number: int, rows: list[dict], checks: lis
         )
     summary = ", ".join(f"{state.lower()}={count}" for state, count in sorted(state_counts.items()))
     console.print(table)
-    console.print(f"[dim]Summary: total={len(checks)}, running={len(rows)}[/dim]")
+    console.print(f"[dim]Summary: total={len(checks)}, running={running_count}[/dim]")
     if summary:
         console.print(f"[dim]States: {summary}[/dim]")
 
@@ -437,16 +444,9 @@ def main() -> int:
     running_checks = [c for c in checks if check_state(c) in RUNNING_STATES]
     state_counts = Counter(check_state(c) or "UNKNOWN" for c in checks)
 
-    if not running_checks:
-        summary = ", ".join(f"{state.lower()}={count}" for state, count in sorted(state_counts.items()))
-        console.print(f"[green]No running CI checks for PR #{pr_number}.[/green]")
-        if summary:
-            console.print(f"[dim]Current check states: {summary}[/dim]")
-        return 0
-
-    rows = make_running_rows(running_checks)
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        render_table(console, pr_number, rows, checks, state_counts)
+    rows = make_rows(running_checks or checks)
+    if not running_checks or not sys.stdin.isatty() or not sys.stdout.isatty():
+        render_table(console, pr_number, rows, checks, state_counts, len(running_checks))
         return 0
 
     run_selector(rows, pr_number)
