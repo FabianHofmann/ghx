@@ -236,9 +236,10 @@ def render_table(console: Console, pr_number: int, rows: list[dict], checks: lis
         console.print(f"[dim]States: {summary}[/dim]")
 
 
-def run_selector(rows: list[dict], pr_number: int) -> str | None:
+def run_selector(rows: list[dict], pr_number: int) -> None:
     selected = [0]
     scroll_offset = [0]
+    action_message = ["Enter opens selected run"]
     visible_count = min(len(rows), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
 
@@ -364,7 +365,7 @@ def run_selector(rows: list[dict], pr_number: int) -> str | None:
             ("class:footer-key", "Enter "),
             ("class:footer", "open run  "),
             ("class:footer-key", "q/Esc "),
-            ("class:footer", "quit"),
+            ("class:footer", f"quit  |  {action_message[0]}"),
         ]
 
     header_control = FormattedTextControl(get_header)
@@ -389,7 +390,16 @@ def run_selector(rows: list[dict], pr_number: int) -> str | None:
 
     @kb.add("enter")
     def _(event):
-        event.app.exit(result=rows[selected[0]]["link"] or None)
+        url = rows[selected[0]]["link"]
+        if not url:
+            action_message[0] = "No URL for selected run"
+            event.app.invalidate()
+            return
+        if open_link(url):
+            action_message[0] = "Opened selected run"
+        else:
+            action_message[0] = "Failed to open selected run"
+        event.app.invalidate()
 
     @kb.add("q")
     @kb.add("escape")
@@ -413,7 +423,7 @@ def run_selector(rows: list[dict], pr_number: int) -> str | None:
     )
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
-    return app.run()
+    app.run()
 
 
 def main() -> int:
@@ -439,16 +449,7 @@ def main() -> int:
         render_table(console, pr_number, rows, checks, state_counts)
         return 0
 
-    selected_link = run_selector(rows, pr_number)
-    if not selected_link:
-        console.print("[dim]No run opened.[/dim]")
-        return 0
-
-    if open_link(selected_link):
-        console.print(f"[green]Opened:[/green] {selected_link}")
-    else:
-        console.print(f"[red]Failed to open:[/red] {selected_link}")
-        return 1
+    run_selector(rows, pr_number)
 
     return 0
 
