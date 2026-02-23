@@ -158,6 +158,8 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             scroll_offset[0] = selected[0] - visible_count + 1
 
     def get_header():
+        if not notifications:
+            return [("class:header", "  Notifications "), ("class:border", "(0 unread)\n")]
         start = scroll_offset[0] + 1
         end = min(scroll_offset[0] + visible_count, len(notifications))
         return [
@@ -166,6 +168,8 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
         ]
 
     def get_list_text():
+        if not notifications:
+            return []
         lines = []
         header_line = f"{'':<{prefix_w}}{'Type':<{col_type}}{'Title':<{col_title + title_padding}}"
         if all_repos:
@@ -219,10 +223,14 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
         return lines
 
     def get_detail_header():
+        if not notifications:
+            return []
         n = notifications[selected[0]]
         return [("class:header", f"  {n['subject']['title']}\n")]
 
     def get_detail_text():
+        if not notifications:
+            return []
         n = notifications[selected[0]]
         type_label = TYPE_LABELS.get(n["subject"]["type"], n["subject"]["type"])
         reason = REASON_LABELS.get(n["reason"], n["reason"])
