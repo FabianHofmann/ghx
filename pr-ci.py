@@ -40,6 +40,7 @@ STATE_STYLES = {
     "SUCCESS": "green",
     "COMPLETED": "green",
     "FAILURE": "red",
+    "FAILED": "red",
     "ERROR": "red",
     "TIMED_OUT": "red",
     "CANCELLED": "bright_black",
@@ -107,7 +108,16 @@ def get_pr_checks(pr_number: int) -> list[dict]:
 
 
 def check_state(check: dict) -> str:
-    return (check.get("state") or check.get("status") or "").upper()
+    state = (check.get("state") or check.get("status") or "").upper()
+    conclusion = (check.get("conclusion") or "").upper()
+    if state == "COMPLETED":
+        if conclusion in {"SUCCESS"}:
+            return "SUCCESS"
+        if conclusion in {"CANCELLED", "SKIPPED", "NEUTRAL"}:
+            return conclusion
+        if conclusion:
+            return "FAILED"
+    return state
 
 
 def check_name(check: dict) -> str:
@@ -189,6 +199,13 @@ def make_rows(checks: list[dict]) -> list[dict]:
                 "link": link,
             }
         )
+    rows.sort(
+        key=lambda row: (
+            row["started_at"] != "n/a",
+            row["started_at"],
+        ),
+        reverse=True,
+    )
     return rows
 
 
@@ -268,7 +285,7 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         start = scroll_offset[0] + 1
         end = min(scroll_offset[0] + visible_count, len(rows))
         return [
-            ("class:header", f"  Running CI Checks for PR #{pr_number} "),
+            ("class:header", f"  CI Checks for PR #{pr_number} "),
             ("class:border", f"({len(rows)} checks, showing {start}-{end})\n"),
         ]
 
@@ -444,8 +461,8 @@ def main() -> int:
     running_checks = [c for c in checks if check_state(c) in RUNNING_STATES]
     state_counts = Counter(check_state(c) or "UNKNOWN" for c in checks)
 
-    rows = make_rows(running_checks or checks)
-    if not running_checks or not sys.stdin.isatty() or not sys.stdout.isatty():
+    rows = make_rows(checks)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
         render_table(console, pr_number, rows, checks, state_counts, len(running_checks))
         return 0
 

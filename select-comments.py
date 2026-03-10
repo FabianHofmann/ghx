@@ -286,10 +286,9 @@ def format_claude_prompt(comment: dict, pr_number: int, repo: str) -> str:
 
 {format_comment_thread(comment)}
 
-Read the file, understand the reviewer's feedback, and make the necessary changes. If the comment is a question or suggestion, evaluate it and respond appropriately."""
+Read the file, understand the reviewer's feedback, and make the necessary changes. If the comment is a question or suggestion, evaluate it and formulate a respond, that I can post."""
 
-    escaped = prompt.replace("'", "'\\''")
-    return f"co '{escaped}'"
+    return prompt
 
 
 def format_claude_prompt_multi(comments: list[dict], pr_number: int, repo: str) -> str:
@@ -301,10 +300,9 @@ def format_claude_prompt_multi(comments: list[dict], pr_number: int, repo: str) 
 
 {threads}
 
-Read the files, understand the reviewer's feedback, and make the necessary changes. If a comment is a question or suggestion, evaluate it and respond appropriately."""
+Read the files, understand the reviewer's feedback, and make the necessary changes. If a comment is a question or suggestion, evaluate it and formulate a respond, that I can post."""
 
-    escaped = prompt.replace("'", "'\\''")
-    return f"co '{escaped}'"
+    return prompt
 
 
 def copy_to_clipboard(text: str) -> None:
@@ -472,8 +470,8 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
             ("class:footer", "answer  "),
             ("class:footer-key", "c "),
             ("class:footer", "copy  "),
-            ("class:footer-key", "r "),
-            ("class:footer", "resolve  "),
+            ("class:footer-key", "d "),
+            ("class:footer", "done  "),
             ("class:footer-key", "q "),
             ("class:footer", "quit"),
         ]
@@ -525,7 +523,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
         prompt = format_claude_prompt_multi([comments[i] for i in indices], pr_number, repo)
         copy_to_clipboard(prompt)
 
-    @kb.add("r")
+    @kb.add("d")
     def _(event):
         if not comments:
             return

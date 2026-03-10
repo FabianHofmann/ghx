@@ -19,7 +19,13 @@ def main() -> int:
         return 1
 
     pr_number = result.stdout.strip()
-    subprocess.run(["gh", "pr", "view", pr_number, "--web"])
+    subprocess.Popen(
+        ["gh", "pr", "view", pr_number, "--web"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
     return 0
 
 
