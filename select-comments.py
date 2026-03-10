@@ -7,6 +7,7 @@ import subprocess
 import json
 import sys
 import shutil
+import threading
 from pathlib import Path
 from prompt_toolkit import Application, prompt as pt_prompt
 from prompt_toolkit.key_binding import KeyBindings
@@ -65,6 +66,7 @@ MONOKAI_STYLE = Style.from_dict({
     "comment-header": "#34D399 bold",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
+    "new-notif": "#f92672 bold",
 })
 
 ROW_SPACING_EVERY = 0
@@ -309,10 +311,12 @@ def copy_to_clipboard(text: str) -> None:
     pyperclip.copy(text)
 
 
-def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None:
+def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "", repo_name: str = "") -> dict | None:
     cursor = [0]
     selected: set[int] = set()
     scroll_offset = [0]
+    has_new = [False]
+    poll_stop = threading.Event()
     visible_count = min(len(comments), 10)
     action: list[dict | None] = [None]
     terminal_width = shutil.get_terminal_size((120, 30)).columns
@@ -457,7 +461,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
         return result
 
     def get_footer():
-        return [
+        parts = [
             ("class:footer-key", " j/k "),
             ("class:footer", "nav  "),
             ("class:footer-key", "Space "),
@@ -472,9 +476,15 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
             ("class:footer", "copy  "),
             ("class:footer-key", "d "),
             ("class:footer", "done  "),
+            ("class:footer-key", "r "),
+            ("class:footer", "refresh  "),
             ("class:footer-key", "q "),
             ("class:footer", "quit"),
         ]
+        if has_new[0]:
+            parts.append(("class:footer", "  "))
+            parts.append(("class:new-notif", "● new comments available"))
+        return parts
 
     header_control = FormattedTextControl(get_header)
     list_control = FormattedTextControl(get_list_text)
@@ -558,6 +568,22 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
         action[0] = {"type": "reply", "index": cursor[0]}
         event.app.exit()
 
+    @kb.add("r")
+    def _(event):
+        if not owner or not repo_name:
+            return
+        has_new[0] = False
+        new_comments = get_unresolved_comments(owner, repo_name, pr_number)
+        comments.clear()
+        comments.extend(new_comments)
+        selected.clear()
+        if not comments:
+            event.app.exit()
+            return
+        if cursor[0] >= len(comments):
+            cursor[0] = len(comments) - 1
+        adjust_scroll()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -582,7 +608,27 @@ def run_selector(comments: list[dict], pr_number: int, repo: str) -> dict | None
     )
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
-    app.run()
+
+    def poll_for_new():
+        if not owner or not repo_name:
+            return
+        current_ids = {c["thread_id"] for c in comments}
+        while not poll_stop.wait(30):
+            try:
+                latest = get_unresolved_comments(owner, repo_name, pr_number)
+                latest_ids = {c["thread_id"] for c in latest}
+                if latest_ids != current_ids:
+                    has_new[0] = True
+                    app.invalidate()
+            except Exception:
+                pass
+
+    poll_thread = threading.Thread(target=poll_for_new, daemon=True)
+    poll_thread.start()
+    try:
+        app.run()
+    finally:
+        poll_stop.set()
     return action[0]
 
 
@@ -605,7 +651,7 @@ def main() -> None:
     console.print(f"[bold #a6e22e]Found {len(comments)} unresolved comment(s)[/]\n")
 
     while comments:
-        result = run_selector(comments, pr_number, f"{owner}/{repo}")
+        result = run_selector(comments, pr_number, f"{owner}/{repo}", owner=owner, repo_name=repo)
         if not result:
             break
         if result["type"] == "reply":

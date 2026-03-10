@@ -7,6 +7,7 @@ import subprocess
 import json
 import sys
 import shutil
+import threading
 from datetime import datetime, timezone
 from prompt_toolkit import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -38,6 +39,7 @@ MONOKAI_STYLE = Style.from_dict({
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
+    "new-notif": "#f92672 bold",
 })
 
 ROW_SPACING_EVERY = 0
@@ -129,6 +131,8 @@ def mark_as_done(thread_id: str) -> bool:
 def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -> None:
     selected = [0]
     scroll_offset = [0]
+    has_new = [False]
+    poll_stop = threading.Event()
     visible_count = min(len(notifications), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
     prefix_w = 3
@@ -251,7 +255,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         return lines
 
     def get_footer():
-        return [
+        parts = [
             ("class:footer-key", " ↑/k "),
             ("class:footer", "up  "),
             ("class:footer-key", "↓/j "),
@@ -265,6 +269,10 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
+        if has_new[0]:
+            parts.append(("class:footer", "  "))
+            parts.append(("class:new-notif", "● new notifications available"))
+        return parts
 
     header_control = FormattedTextControl(get_header)
     list_control = FormattedTextControl(get_list_text)
@@ -313,6 +321,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
 
     @kb.add("r")
     def _(event):
+        has_new[0] = False
         new_notifications = fetch_notifications(repo)
         notifications.clear()
         notifications.extend(new_notifications)
@@ -343,7 +352,25 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     )
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
-    app.run()
+
+    def poll_for_new():
+        current_ids = {n["id"] for n in notifications}
+        while not poll_stop.wait(30):
+            try:
+                latest = fetch_notifications(repo)
+                latest_ids = {n["id"] for n in latest}
+                if latest_ids != current_ids:
+                    has_new[0] = True
+                    app.invalidate()
+            except Exception:
+                pass
+
+    poll_thread = threading.Thread(target=poll_for_new, daemon=True)
+    poll_thread.start()
+    try:
+        app.run()
+    finally:
+        poll_stop.set()
 
 
 def main() -> int:

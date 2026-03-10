@@ -10,6 +10,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import webbrowser
 from prompt_toolkit import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -70,6 +71,7 @@ MONOKAI_STYLE = Style.from_dict({
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
+    "new-notif": "#f92672 bold",
 })
 
 
@@ -264,6 +266,8 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     selected = [0]
     scroll_offset = [0]
     action_message = ["Enter opens selected run"]
+    has_new = [False]
+    poll_stop = threading.Event()
     visible_count = min(len(rows), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
 
@@ -381,16 +385,22 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         return lines
 
     def get_footer():
-        return [
+        parts = [
             ("class:footer-key", " ↑/k "),
             ("class:footer", "up  "),
             ("class:footer-key", "↓/j "),
             ("class:footer", "down  "),
             ("class:footer-key", "Enter "),
             ("class:footer", "open run  "),
+            ("class:footer-key", "r "),
+            ("class:footer", "refresh  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", f"quit  |  {action_message[0]}"),
         ]
+        if has_new[0]:
+            parts.append(("class:footer", "  "))
+            parts.append(("class:new-notif", "● checks updated"))
+        return parts
 
     header_control = FormattedTextControl(get_header)
     list_control = FormattedTextControl(get_list_text)
@@ -425,6 +435,20 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
             action_message[0] = "Failed to open selected run"
         event.app.invalidate()
 
+    @kb.add("r")
+    def _(event):
+        has_new[0] = False
+        checks = get_pr_checks(pr_number)
+        new_rows = make_rows(checks)
+        rows.clear()
+        rows.extend(new_rows)
+        if not rows:
+            event.app.exit(result=None)
+            return
+        if selected[0] >= len(rows):
+            selected[0] = len(rows) - 1
+        adjust_scroll()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -447,7 +471,26 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     )
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
-    app.run()
+
+    def poll_for_new():
+        current_states = {(r["name"], r["state"]) for r in rows}
+        while not poll_stop.wait(15):
+            try:
+                checks = get_pr_checks(pr_number)
+                new_rows = make_rows(checks)
+                new_states = {(r["name"], r["state"]) for r in new_rows}
+                if new_states != current_states:
+                    has_new[0] = True
+                    app.invalidate()
+            except Exception:
+                pass
+
+    poll_thread = threading.Thread(target=poll_for_new, daemon=True)
+    poll_thread.start()
+    try:
+        app.run()
+    finally:
+        poll_stop.set()
 
 
 def main() -> int:
