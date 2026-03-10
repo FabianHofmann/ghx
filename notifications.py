@@ -126,7 +126,7 @@ def mark_as_done(thread_id: str) -> bool:
     return result.returncode == 0
 
 
-def run_selector(notifications: list[dict], all_repos: bool) -> None:
+def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -> None:
     selected = [0]
     scroll_offset = [0]
     visible_count = min(len(notifications), 12)
@@ -260,6 +260,8 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
             ("class:footer", "browse  "),
             ("class:footer-key", "d "),
             ("class:footer", "done  "),
+            ("class:footer-key", "r "),
+            ("class:footer", "refresh  "),
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
@@ -309,6 +311,18 @@ def run_selector(notifications: list[dict], all_repos: bool) -> None:
                 selected[0] = len(notifications) - 1
             adjust_scroll()
 
+    @kb.add("r")
+    def _(event):
+        new_notifications = fetch_notifications(repo)
+        notifications.clear()
+        notifications.extend(new_notifications)
+        if not notifications:
+            event.app.exit()
+            return
+        if selected[0] >= len(notifications):
+            selected[0] = len(notifications) - 1
+        adjust_scroll()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -348,7 +362,7 @@ def main() -> int:
     scope = f"in {repo}" if repo else "across all repos"
     console.print(f"[bold #a6e22e]Found {len(notifications)} unread notification(s) {scope}[/]\n")
 
-    run_selector(notifications, all_repos)
+    run_selector(notifications, all_repos, repo)
     return 0
 
 
