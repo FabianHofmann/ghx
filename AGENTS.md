@@ -1,10 +1,6 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
-Standalone Python CLI scripts for GitHub PR workflows using `uv run` with PEP 723 inline script metadata. Each script is self-contained with its dependencies declared inline.
+Standalone Python CLI scripts for GitHub workflows using `uv run` with PEP 723 inline script metadata. Each script is self-contained with its dependencies declared inline.
 
 ## Running Scripts
 
