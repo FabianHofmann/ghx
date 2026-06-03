@@ -13,12 +13,17 @@ import sys
 import threading
 import webbrowser
 from prompt_toolkit import Application
+from prompt_toolkit.application import get_app
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout import ConditionalContainer, Dimension, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.table import Table
+
+
+DETAIL_MIN_ROWS = 14
 
 
 RUNNING_STATES = {
@@ -51,7 +56,7 @@ STATE_STYLES = {
 
 
 MONOKAI_STYLE = Style.from_dict({
-    "": "#f8f8f2 bg:#272822",
+    "": "#f8f8f2",
     "header": "#34D399 bold",
     "border": "#75715e",
     "col-header": "#34D399 bold",
@@ -268,8 +273,16 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     action_message = ["Enter opens selected run"]
     has_new = [False]
     poll_stop = threading.Event()
-    visible_count = min(len(rows), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    list_header_lines = 2
+
+    def detail_visible() -> bool:
+        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+
+    def list_capacity() -> int:
+        total = get_app().output.get_size().rows
+        chrome = 10 if detail_visible() else 2
+        return max(1, total - chrome - list_header_lines)
 
     prefix_w = 3
     col_state = max(9, min(14, max(len(r["state"]) for r in rows)))
@@ -280,14 +293,15 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     col_check = max(24, min(76, terminal_width - fixed))
 
     def adjust_scroll() -> None:
+        capacity = list_capacity()
         if selected[0] < scroll_offset[0]:
             scroll_offset[0] = selected[0]
-        elif selected[0] >= scroll_offset[0] + visible_count:
-            scroll_offset[0] = selected[0] - visible_count + 1
+        elif selected[0] >= scroll_offset[0] + capacity:
+            scroll_offset[0] = selected[0] - capacity + 1
 
     def get_header():
         start = scroll_offset[0] + 1
-        end = min(scroll_offset[0] + visible_count, len(rows))
+        end = min(scroll_offset[0] + list_capacity(), len(rows))
         return [
             ("class:header", f"  CI Checks for PR #{pr_number} "),
             ("class:border", f"({len(rows)} checks, showing {start}-{end})\n"),
@@ -322,7 +336,7 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         lines.append(("class:col-header-dim", sep_line))
 
         start = scroll_offset[0]
-        end = min(start + visible_count, len(rows))
+        end = min(start + list_capacity(), len(rows))
         for i in range(start, end):
             row = rows[i]
             is_sel = i == selected[0]
@@ -454,17 +468,23 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     def _(event):
         event.app.exit(result=None)
 
-    list_header_lines = 2
-    list_height = visible_count + list_header_lines
-    layout = Layout(
+    detail_section = ConditionalContainer(
         HSplit(
             [
-                Window(header_control, height=1),
-                Window(list_control, height=list_height),
                 Window(char="─", height=1, style="class:border"),
                 Window(detail_header_control, height=1),
                 Window(detail_control, height=5),
                 Window(char="─", height=1, style="class:border"),
+            ]
+        ),
+        filter=Condition(detail_visible),
+    )
+    layout = Layout(
+        HSplit(
+            [
+                Window(header_control, height=1),
+                Window(list_control, height=Dimension(min=1, weight=1)),
+                detail_section,
                 Window(footer_control, height=1),
             ]
         )

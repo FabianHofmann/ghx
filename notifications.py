@@ -10,14 +10,18 @@ import shutil
 import threading
 from datetime import datetime, timezone
 from prompt_toolkit import Application
+from prompt_toolkit.application import get_app
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Layout, HSplit, Window
+from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
+DETAIL_MIN_ROWS = 14
+
 MONOKAI_STYLE = Style.from_dict({
-    "": "#f8f8f2 bg:#272822",
+    "": "#f8f8f2",
     "item": "#f8f8f2",
     "item-type": "#ae81ff",
     "item-repo": "#66d9ef",
@@ -39,7 +43,6 @@ MONOKAI_STYLE = Style.from_dict({
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
-    "new-notif": "#f92672 bold",
 })
 
 ROW_SPACING_EVERY = 0
@@ -131,10 +134,18 @@ def mark_as_done(thread_id: str) -> bool:
 def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -> None:
     selected = [0]
     scroll_offset = [0]
-    has_new = [False]
     poll_stop = threading.Event()
-    visible_count = min(len(notifications), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    list_header_lines = 2
+
+    def detail_visible() -> bool:
+        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+
+    def list_capacity() -> int:
+        total = get_app().output.get_size().rows
+        chrome = 10 if detail_visible() else 2
+        return max(1, total - chrome - list_header_lines)
+
     prefix_w = 3
     title_padding = 4
     repo_padding = 3
@@ -156,16 +167,17 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     col_title = max(20, min(64, terminal_width - fixed))
 
     def adjust_scroll():
+        capacity = list_capacity()
         if selected[0] < scroll_offset[0]:
             scroll_offset[0] = selected[0]
-        elif selected[0] >= scroll_offset[0] + visible_count:
-            scroll_offset[0] = selected[0] - visible_count + 1
+        elif selected[0] >= scroll_offset[0] + capacity:
+            scroll_offset[0] = selected[0] - capacity + 1
 
     def get_header():
         if not notifications:
             return [("class:header", "  Notifications "), ("class:border", "(0 unread)\n")]
         start = scroll_offset[0] + 1
-        end = min(scroll_offset[0] + visible_count, len(notifications))
+        end = min(scroll_offset[0] + list_capacity(), len(notifications))
         return [
             ("class:header", "  Notifications "),
             ("class:border", f"({len(notifications)} unread, showing {start}-{end})\n"),
@@ -186,7 +198,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         lines.append(("class:col-header", header_line))
         lines.append(("class:col-header-dim", f"{sep}\n"))
         start = scroll_offset[0]
-        end = min(start + visible_count, len(notifications))
+        end = min(start + list_capacity(), len(notifications))
         for i in range(start, end):
             n = notifications[i]
             is_sel = i == selected[0]
@@ -255,7 +267,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         return lines
 
     def get_footer():
-        parts = [
+        return [
             ("class:footer-key", " ↑/k "),
             ("class:footer", "up  "),
             ("class:footer-key", "↓/j "),
@@ -269,16 +281,26 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             ("class:footer-key", "q/Esc "),
             ("class:footer", "quit"),
         ]
-        if has_new[0]:
-            parts.append(("class:footer", "  "))
-            parts.append(("class:new-notif", "● new notifications available"))
-        return parts
 
     header_control = FormattedTextControl(get_header)
     list_control = FormattedTextControl(get_list_text)
     detail_header_control = FormattedTextControl(get_detail_header)
     detail_control = FormattedTextControl(get_detail_text)
     footer_control = FormattedTextControl(get_footer)
+
+    def apply_notifications(new_notifications: list[dict]) -> None:
+        current_id = notifications[selected[0]]["id"] if notifications else None
+        notifications.clear()
+        notifications.extend(new_notifications)
+        if not notifications:
+            get_app().exit()
+            return
+        selected[0] = next(
+            (i for i, n in enumerate(notifications) if n["id"] == current_id),
+            min(selected[0], len(notifications) - 1),
+        )
+        adjust_scroll()
+        get_app().invalidate()
 
     kb = KeyBindings()
 
@@ -321,32 +343,28 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
 
     @kb.add("r")
     def _(event):
-        has_new[0] = False
-        new_notifications = fetch_notifications(repo)
-        notifications.clear()
-        notifications.extend(new_notifications)
-        if not notifications:
-            event.app.exit()
-            return
-        if selected[0] >= len(notifications):
-            selected[0] = len(notifications) - 1
-        adjust_scroll()
+        apply_notifications(fetch_notifications(repo))
 
     @kb.add("q")
     @kb.add("escape")
     def _(event):
         event.app.exit()
 
-    list_header_lines = 2
-
-    layout = Layout(
+    detail_section = ConditionalContainer(
         HSplit([
-            Window(header_control, height=1),
-            Window(list_control, height=visible_count + list_header_lines),
             Window(char="─", height=1, style="class:border"),
             Window(detail_header_control, height=1),
             Window(detail_control, height=5),
             Window(char="─", height=1, style="class:border"),
+        ]),
+        filter=Condition(detail_visible),
+    )
+
+    layout = Layout(
+        HSplit([
+            Window(header_control, height=1),
+            Window(list_control, height=Dimension(min=1, weight=1)),
+            detail_section,
             Window(footer_control, height=1),
         ])
     )
@@ -354,16 +372,13 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
 
     def poll_for_new():
-        current_ids = {n["id"] for n in notifications}
         while not poll_stop.wait(30):
             try:
                 latest = fetch_notifications(repo)
-                latest_ids = {n["id"] for n in latest}
-                if latest_ids != current_ids:
-                    has_new[0] = True
-                    app.invalidate()
             except Exception:
-                pass
+                continue
+            if {n["id"] for n in latest} != {n["id"] for n in notifications} and app.loop is not None:
+                app.loop.call_soon_threadsafe(apply_notifications, latest)
 
     poll_thread = threading.Thread(target=poll_for_new, daemon=True)
     poll_thread.start()

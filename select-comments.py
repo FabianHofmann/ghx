@@ -10,8 +10,10 @@ import shutil
 import threading
 from pathlib import Path
 from prompt_toolkit import Application, prompt as pt_prompt
+from prompt_toolkit.application import get_app
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Layout, HSplit, Window
+from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -19,6 +21,9 @@ from pygments import lex
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.token import Token
 import pyperclip
+
+SNIPPET_MIN_ROWS = 28
+COMMENT_MIN_ROWS = 16
 
 TOKEN_COLORS = {
     Token.Keyword: "#e5da74",
@@ -42,7 +47,7 @@ TOKEN_COLORS = {
 }
 
 MONOKAI_STYLE = Style.from_dict({
-    "": "#f8f8f2 bg:#272822",
+    "": "#f8f8f2",
     "item": "#f8f8f2",
     "item-path": "#66d9ef",
     "item-line": "#ae81ff",
@@ -317,9 +322,26 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
     scroll_offset = [0]
     has_new = [False]
     poll_stop = threading.Event()
-    visible_count = min(len(comments), 10)
     action: list[dict | None] = [None]
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    list_header_lines = 2
+
+    def snippet_visible() -> bool:
+        return get_app().output.get_size().rows >= SNIPPET_MIN_ROWS
+
+    def comment_visible() -> bool:
+        return get_app().output.get_size().rows >= COMMENT_MIN_ROWS
+
+    def list_capacity() -> int:
+        total = get_app().output.get_size().rows
+        if snippet_visible():
+            chrome = 24
+        elif comment_visible():
+            chrome = 13
+        else:
+            chrome = 2
+        return max(1, total - chrome - list_header_lines)
+
     prefix_w = 4
     gap_path_line = 3
     gap_author_state = 3
@@ -341,15 +363,16 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
     col_path = max(24, min(80, terminal_width - fixed))
 
     def adjust_scroll():
+        capacity = list_capacity()
         if cursor[0] < scroll_offset[0]:
             scroll_offset[0] = cursor[0]
-        elif cursor[0] >= scroll_offset[0] + visible_count:
-            scroll_offset[0] = cursor[0] - visible_count + 1
+        elif cursor[0] >= scroll_offset[0] + capacity:
+            scroll_offset[0] = cursor[0] - capacity + 1
 
     def get_header():
         sel_info = f", {len(selected)} selected" if selected else ""
         start = scroll_offset[0] + 1
-        end = min(scroll_offset[0] + visible_count, len(comments))
+        end = min(scroll_offset[0] + list_capacity(), len(comments))
         return [
             ("class:header", "  PR Comments "),
             ("class:border", f"({len(comments)} unresolved{sel_info}, showing {start}-{end})\n"),
@@ -381,7 +404,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
         lines.append(("class:col-header", header_line))
         lines.append(("class:col-header-dim", separator_line))
         start = scroll_offset[0]
-        end = min(start + visible_count, len(comments))
+        end = min(start + list_capacity(), len(comments))
         for i in range(start, end):
             c = comments[i]
             is_cursor = i == cursor[0]
@@ -589,20 +612,30 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
     def _(event):
         event.app.exit()
 
-    list_header_lines = 2
-    list_height = visible_count + list_header_lines
+    snippet_section = ConditionalContainer(
+        HSplit([
+            Window(char="─", height=1, style="class:border"),
+            Window(snippet_header_control, height=1),
+            Window(snippet_control, height=9),
+        ]),
+        filter=Condition(snippet_visible),
+    )
+    comment_section = ConditionalContainer(
+        HSplit([
+            Window(char="─", height=1, style="class:border"),
+            Window(comment_header_control, height=1),
+            Window(body_control, height=8, wrap_lines=True),
+            Window(char="─", height=1, style="class:border"),
+        ]),
+        filter=Condition(comment_visible),
+    )
 
     layout = Layout(
         HSplit([
             Window(header_control, height=1),
-            Window(list_control, height=list_height),
-            Window(char="─", height=1, style="class:border"),
-            Window(snippet_header_control, height=1),
-            Window(snippet_control, height=9),
-            Window(char="─", height=1, style="class:border"),
-            Window(comment_header_control, height=1),
-            Window(body_control, wrap_lines=True),
-            Window(char="─", height=1, style="class:border"),
+            Window(list_control, height=Dimension(min=1, weight=1)),
+            snippet_section,
+            comment_section,
             Window(footer_control, height=1),
         ])
     )

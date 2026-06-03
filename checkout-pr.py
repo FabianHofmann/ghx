@@ -9,14 +9,18 @@ import json
 import sys
 import shutil
 from prompt_toolkit import Application
+from prompt_toolkit.application import get_app
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Layout, HSplit, Window
+from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
+DETAIL_MIN_ROWS = 14
+
 MONOKAI_STYLE = Style.from_dict({
-    "": "#f8f8f2 bg:#272822",
+    "": "#f8f8f2",
     "item": "#f8f8f2",
     "item-number": "#75715e",
     "item-title": "#f8f8f2",
@@ -86,8 +90,17 @@ def checkout_pr(number: int) -> None:
 def run_selector(prs: list[dict]) -> None:
     selected = [0]
     scroll_offset = [0]
-    visible_count = min(len(prs), 12)
     terminal_width = shutil.get_terminal_size((120, 30)).columns
+    list_header_lines = 2
+
+    def detail_visible() -> bool:
+        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+
+    def list_capacity() -> int:
+        total = get_app().output.get_size().rows
+        chrome = 10 if detail_visible() else 2
+        return max(1, total - chrome - list_header_lines)
+
     prefix_w = 3
     gap_num_title = 1
     gap_title_branch = 3
@@ -112,14 +125,15 @@ def run_selector(prs: list[dict]) -> None:
     col_title = max(18, min(60, terminal_width - fixed))
 
     def adjust_scroll():
+        capacity = list_capacity()
         if selected[0] < scroll_offset[0]:
             scroll_offset[0] = selected[0]
-        elif selected[0] >= scroll_offset[0] + visible_count:
-            scroll_offset[0] = selected[0] - visible_count + 1
+        elif selected[0] >= scroll_offset[0] + capacity:
+            scroll_offset[0] = selected[0] - capacity + 1
 
     def get_header():
         start = scroll_offset[0] + 1
-        end = min(scroll_offset[0] + visible_count, len(prs))
+        end = min(scroll_offset[0] + list_capacity(), len(prs))
         return [
             ("class:header", "  Pull Requests "),
             ("class:border", f"({len(prs)} open, showing {start}-{end})\n"),
@@ -155,7 +169,7 @@ def run_selector(prs: list[dict]) -> None:
         lines.append(("class:col-header", header_line))
         lines.append(("class:col-header-dim", separator_line))
         start = scroll_offset[0]
-        end = min(start + visible_count, len(prs))
+        end = min(start + list_capacity(), len(prs))
         for i in range(start, end):
             pr = prs[i]
             is_sel = i == selected[0]
@@ -283,17 +297,21 @@ def run_selector(prs: list[dict]) -> None:
     def _(event):
         event.app.exit(result=None)
 
-    list_header_lines = 2
-    list_height = visible_count + list_header_lines
-
-    layout = Layout(
+    detail_section = ConditionalContainer(
         HSplit([
-            Window(header_control, height=1),
-            Window(list_control, height=list_height),
             Window(char="─", height=1, style="class:border"),
             Window(detail_header_control, height=1),
             Window(detail_control, height=5),
             Window(char="─", height=1, style="class:border"),
+        ]),
+        filter=Condition(detail_visible),
+    )
+
+    layout = Layout(
+        HSplit([
+            Window(header_control, height=1),
+            Window(list_control, height=Dimension(min=1, weight=1)),
+            detail_section,
             Window(footer_control, height=1),
         ])
     )
