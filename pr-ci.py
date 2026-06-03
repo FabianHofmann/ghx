@@ -15,8 +15,10 @@ import webbrowser
 from prompt_toolkit import Application
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import ConditionalContainer, Dimension, HSplit, Layout, Window
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.layout import ConditionalContainer, Dimension, HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -24,6 +26,9 @@ from rich.table import Table
 
 
 DETAIL_MIN_ROWS = 14
+
+ANSI_SEQUENCES["\x1b[I"] = Keys.F23
+ANSI_SEQUENCES["\x1b[O"] = Keys.F24
 
 
 RUNNING_STATES = {
@@ -77,6 +82,9 @@ MONOKAI_STYLE = Style.from_dict({
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
     "new-notif": "#f92672 bold",
+    "focus-bar": "#a6e22e bold",
+    "focus-bar-off": "#3a3d34",
+    "header-off": "#75715e bold",
 })
 
 
@@ -272,6 +280,7 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
     scroll_offset = [0]
     action_message = ["Enter opens selected run"]
     has_new = [False]
+    has_focus = [True]
     poll_stop = threading.Event()
     terminal_width = shutil.get_terminal_size((120, 30)).columns
     list_header_lines = 2
@@ -300,10 +309,11 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
             scroll_offset[0] = selected[0] - capacity + 1
 
     def get_header():
+        hdr = "class:header" if has_focus[0] else "class:header-off"
         start = scroll_offset[0] + 1
         end = min(scroll_offset[0] + list_capacity(), len(rows))
         return [
-            ("class:header", f"  CI Checks for PR #{pr_number} "),
+            (hdr, f"  CI Checks for PR #{pr_number} "),
             ("class:border", f"({len(rows)} checks, showing {start}-{end})\n"),
         ]
 
@@ -417,7 +427,7 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         return parts
 
     header_control = FormattedTextControl(get_header)
-    list_control = FormattedTextControl(get_list_text)
+    list_control = FormattedTextControl(get_list_text, show_cursor=False, focusable=True)
     detail_header_control = FormattedTextControl(get_detail_header)
     detail_control = FormattedTextControl(get_detail_text)
     footer_control = FormattedTextControl(get_footer)
@@ -463,6 +473,16 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
             selected[0] = len(rows) - 1
         adjust_scroll()
 
+    @kb.add(Keys.F23)
+    def _(event):
+        has_focus[0] = True
+        event.app.invalidate()
+
+    @kb.add(Keys.F24)
+    def _(event):
+        has_focus[0] = False
+        event.app.invalidate()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -479,13 +499,23 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         ),
         filter=Condition(detail_visible),
     )
+    def bar_style() -> str:
+        return "class:focus-bar" if has_focus[0] else "class:focus-bar-off"
+
+    accent_bar = Window(width=1, char="┃", style=bar_style)
+
     layout = Layout(
-        HSplit(
+        VSplit(
             [
-                Window(header_control, height=1),
-                Window(list_control, height=Dimension(min=1, weight=1)),
-                detail_section,
-                Window(footer_control, height=1),
+                accent_bar,
+                HSplit(
+                    [
+                        Window(header_control, height=1),
+                        Window(list_control, height=Dimension(min=1, weight=1)),
+                        detail_section,
+                        Window(footer_control, height=1),
+                    ]
+                ),
             ]
         )
     )
@@ -505,12 +535,18 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
             except Exception:
                 pass
 
+    def enable_focus_reporting() -> None:
+        app.output.write_raw("\x1b[?1004h")
+        app.output.flush()
+
     poll_thread = threading.Thread(target=poll_for_new, daemon=True)
     poll_thread.start()
     try:
-        app.run()
+        app.run(pre_run=enable_focus_reporting)
     finally:
         poll_stop.set()
+        app.output.write_raw("\x1b[?1004l")
+        app.output.flush()
 
 
 def main() -> int:

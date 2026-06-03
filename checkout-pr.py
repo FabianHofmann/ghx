@@ -11,13 +11,18 @@ import shutil
 from prompt_toolkit import Application
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, Window
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
 DETAIL_MIN_ROWS = 14
+
+ANSI_SEQUENCES["\x1b[I"] = Keys.F23
+ANSI_SEQUENCES["\x1b[O"] = Keys.F24
 
 MONOKAI_STYLE = Style.from_dict({
     "": "#f8f8f2",
@@ -43,6 +48,9 @@ MONOKAI_STYLE = Style.from_dict({
     "detail-value": "#f8f8f2",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
+    "focus-bar": "#a6e22e bold",
+    "focus-bar-off": "#3a3d34",
+    "header-off": "#75715e bold",
 })
 
 ROW_SPACING_EVERY = 0
@@ -90,6 +98,7 @@ def checkout_pr(number: int) -> None:
 def run_selector(prs: list[dict]) -> None:
     selected = [0]
     scroll_offset = [0]
+    has_focus = [True]
     terminal_width = shutil.get_terminal_size((120, 30)).columns
     list_header_lines = 2
 
@@ -132,10 +141,11 @@ def run_selector(prs: list[dict]) -> None:
             scroll_offset[0] = selected[0] - capacity + 1
 
     def get_header():
+        hdr = "class:header" if has_focus[0] else "class:header-off"
         start = scroll_offset[0] + 1
         end = min(scroll_offset[0] + list_capacity(), len(prs))
         return [
-            ("class:header", "  Pull Requests "),
+            (hdr, "  Pull Requests "),
             ("class:border", f"({len(prs)} open, showing {start}-{end})\n"),
         ]
 
@@ -262,7 +272,7 @@ def run_selector(prs: list[dict]) -> None:
         ]
 
     header_control = FormattedTextControl(get_header)
-    list_control = FormattedTextControl(get_list_text)
+    list_control = FormattedTextControl(get_list_text, show_cursor=False, focusable=True)
     detail_header_control = FormattedTextControl(get_detail_header)
     detail_control = FormattedTextControl(get_detail_text)
     footer_control = FormattedTextControl(get_footer)
@@ -292,6 +302,16 @@ def run_selector(prs: list[dict]) -> None:
         pr = prs[selected[0]]
         event.app.exit(result=pr["number"])
 
+    @kb.add(Keys.F23)
+    def _(event):
+        has_focus[0] = True
+        event.app.invalidate()
+
+    @kb.add(Keys.F24)
+    def _(event):
+        has_focus[0] = False
+        event.app.invalidate()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -307,17 +327,34 @@ def run_selector(prs: list[dict]) -> None:
         filter=Condition(detail_visible),
     )
 
+    def bar_style() -> str:
+        return "class:focus-bar" if has_focus[0] else "class:focus-bar-off"
+
+    accent_bar = Window(width=1, char="┃", style=bar_style)
+
     layout = Layout(
-        HSplit([
-            Window(header_control, height=1),
-            Window(list_control, height=Dimension(min=1, weight=1)),
-            detail_section,
-            Window(footer_control, height=1),
+        VSplit([
+            accent_bar,
+            HSplit([
+                Window(header_control, height=1),
+                Window(list_control, height=Dimension(min=1, weight=1)),
+                detail_section,
+                Window(footer_control, height=1),
+            ]),
         ])
     )
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
-    return app.run()
+
+    def enable_focus_reporting() -> None:
+        app.output.write_raw("\x1b[?1004h")
+        app.output.flush()
+
+    try:
+        return app.run(pre_run=enable_focus_reporting)
+    finally:
+        app.output.write_raw("\x1b[?1004l")
+        app.output.flush()
 
 
 def main() -> int:

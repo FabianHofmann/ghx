@@ -12,8 +12,10 @@ from pathlib import Path
 from prompt_toolkit import Application, prompt as pt_prompt
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, Window
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.layout import ConditionalContainer, Dimension, Layout, HSplit, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -21,6 +23,9 @@ from pygments import lex
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.token import Token
 import pyperclip
+
+ANSI_SEQUENCES["\x1b[I"] = Keys.F23
+ANSI_SEQUENCES["\x1b[O"] = Keys.F24
 
 SNIPPET_MIN_ROWS = 28
 COMMENT_MIN_ROWS = 16
@@ -72,6 +77,9 @@ MONOKAI_STYLE = Style.from_dict({
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
     "new-notif": "#f92672 bold",
+    "focus-bar": "#a6e22e bold",
+    "focus-bar-off": "#3a3d34",
+    "header-off": "#75715e bold",
 })
 
 ROW_SPACING_EVERY = 0
@@ -321,6 +329,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
     selected: set[int] = set()
     scroll_offset = [0]
     has_new = [False]
+    has_focus = [True]
     poll_stop = threading.Event()
     action: list[dict | None] = [None]
     terminal_width = shutil.get_terminal_size((120, 30)).columns
@@ -370,11 +379,12 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
             scroll_offset[0] = cursor[0] - capacity + 1
 
     def get_header():
+        hdr = "class:header" if has_focus[0] else "class:header-off"
         sel_info = f", {len(selected)} selected" if selected else ""
         start = scroll_offset[0] + 1
         end = min(scroll_offset[0] + list_capacity(), len(comments))
         return [
-            ("class:header", "  PR Comments "),
+            (hdr, "  PR Comments "),
             ("class:border", f"({len(comments)} unresolved{sel_info}, showing {start}-{end})\n"),
         ]
 
@@ -510,7 +520,7 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
         return parts
 
     header_control = FormattedTextControl(get_header)
-    list_control = FormattedTextControl(get_list_text)
+    list_control = FormattedTextControl(get_list_text, show_cursor=False, focusable=True)
     snippet_header_control = FormattedTextControl(get_snippet_header)
     snippet_control = FormattedTextControl(get_snippet_text)
     comment_header_control = FormattedTextControl(get_comment_header)
@@ -607,6 +617,16 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
             cursor[0] = len(comments) - 1
         adjust_scroll()
 
+    @kb.add(Keys.F23)
+    def _(event):
+        has_focus[0] = True
+        event.app.invalidate()
+
+    @kb.add(Keys.F24)
+    def _(event):
+        has_focus[0] = False
+        event.app.invalidate()
+
     @kb.add("q")
     @kb.add("escape")
     def _(event):
@@ -630,13 +650,21 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
         filter=Condition(comment_visible),
     )
 
+    def bar_style() -> str:
+        return "class:focus-bar" if has_focus[0] else "class:focus-bar-off"
+
+    accent_bar = Window(width=1, char="┃", style=bar_style)
+
     layout = Layout(
-        HSplit([
-            Window(header_control, height=1),
-            Window(list_control, height=Dimension(min=1, weight=1)),
-            snippet_section,
-            comment_section,
-            Window(footer_control, height=1),
+        VSplit([
+            accent_bar,
+            HSplit([
+                Window(header_control, height=1),
+                Window(list_control, height=Dimension(min=1, weight=1)),
+                snippet_section,
+                comment_section,
+                Window(footer_control, height=1),
+            ]),
         ])
     )
 
@@ -656,12 +684,18 @@ def run_selector(comments: list[dict], pr_number: int, repo: str, owner: str = "
             except Exception:
                 pass
 
+    def enable_focus_reporting() -> None:
+        app.output.write_raw("\x1b[?1004h")
+        app.output.flush()
+
     poll_thread = threading.Thread(target=poll_for_new, daemon=True)
     poll_thread.start()
     try:
-        app.run()
+        app.run(pre_run=enable_focus_reporting)
     finally:
         poll_stop.set()
+        app.output.write_raw("\x1b[?1004l")
+        app.output.flush()
     return action[0]
 
 
