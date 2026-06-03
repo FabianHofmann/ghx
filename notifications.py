@@ -6,7 +6,6 @@
 import subprocess
 import json
 import sys
-import shutil
 import threading
 from datetime import datetime, timezone
 from prompt_toolkit import Application
@@ -20,7 +19,10 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
-DETAIL_MIN_ROWS = 14
+DETAIL_META_ROWS = 4
+DETAIL_PREVIEW_ROWS = 5
+DETAIL_SECTION_ROWS = DETAIL_META_ROWS + DETAIL_PREVIEW_ROWS + 3
+DETAIL_MIN_ROWS = 18
 
 ANSI_SEQUENCES["\x1b[I"] = Keys.F23
 ANSI_SEQUENCES["\x1b[O"] = Keys.F24
@@ -131,6 +133,18 @@ def fetch_notifications(repo: str | None) -> list[dict]:
     return json.loads(result.stdout)
 
 
+def fetch_preview(n: dict) -> str:
+    url = n["subject"].get("latest_comment_url") or n["subject"].get("url") or ""
+    if not url:
+        return ""
+    path = url.replace("https://api.github.com", "")
+    result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+    if result.returncode != 0:
+        return ""
+    body = json.loads(result.stdout).get("body") or ""
+    return " ".join(body.split())
+
+
 def mark_as_done(thread_id: str) -> bool:
     result = subprocess.run(
         ["gh", "api", "-X", "PATCH", f"/notifications/threads/{thread_id}"],
@@ -143,16 +157,19 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     selected = [0]
     scroll_offset = [0]
     has_focus = [True]
+    preview_cache: dict[str, str | None] = {}
     poll_stop = threading.Event()
-    terminal_width = shutil.get_terminal_size((120, 30)).columns
     list_header_lines = 2
+
+    def viewport_width() -> int:
+        return get_app().output.get_size().columns - 1
 
     def detail_visible() -> bool:
         return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
 
     def list_capacity() -> int:
         total = get_app().output.get_size().rows
-        chrome = 10 if detail_visible() else 2
+        chrome = (DETAIL_SECTION_ROWS + 2) if detail_visible() else 2
         return max(1, total - chrome - list_header_lines)
 
     prefix_w = 3
@@ -161,8 +178,10 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     reason_padding = 3
 
     col_type = 10
-    col_reason = min(26, max(12, max(len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications)))
-    col_repo = min(24, max(10, max(len(n["repository"]["full_name"]) for n in notifications))) if all_repos else 0
+    reason_lens = [len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications]
+    col_reason = min(26, max(12, max(reason_lens, default=12)))
+    repo_lens = [len(n["repository"]["full_name"]) for n in notifications]
+    col_repo = min(24, max(10, max(repo_lens, default=10))) if all_repos else 0
     col_time = 8
     fixed = (
         prefix_w
@@ -173,7 +192,9 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         + reason_padding
         + col_time
     )
-    col_title = max(20, min(64, terminal_width - fixed))
+
+    def title_width() -> int:
+        return max(20, viewport_width() - fixed)
 
     def adjust_scroll():
         capacity = list_capacity()
@@ -194,8 +215,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         ]
 
     def get_list_text():
-        if not notifications:
-            return []
+        col_title = title_width()
         lines = []
         header_line = f"{'':<{prefix_w}}{'Type':<{col_type}}{'Title':<{col_title + title_padding}}"
         if all_repos:
@@ -207,6 +227,9 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         sep += f"{'─' * (col_reason + reason_padding)}{'─' * col_time}"
         lines.append(("class:col-header", header_line))
         lines.append(("class:col-header-dim", f"{sep}\n"))
+        if not notifications:
+            lines.append(("class:item-time", "\n   Inbox zero — watching for new notifications…\n"))
+            return lines
         start = scroll_offset[0]
         end = min(start + list_capacity(), len(notifications))
         for i in range(start, end):
@@ -276,6 +299,18 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         ]
         return lines
 
+    def get_preview_text():
+        if not notifications:
+            return []
+        label = [("class:detail-label", "  Preview: ")]
+        cached = preview_cache.get(notifications[selected[0]]["id"])
+        if cached is None:
+            return label + [("class:item-time", "loading…")]
+        if not cached:
+            return label + [("class:item-time", "(no preview)")]
+        max_chars = (DETAIL_PREVIEW_ROWS - 1) * max(1, viewport_width() - 3)
+        return label + [("class:detail-value", "\n  " + ellipsize(cached, max_chars))]
+
     def get_footer():
         return [
             ("class:footer-key", " ↑/k "),
@@ -296,18 +331,16 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     list_control = FormattedTextControl(get_list_text, show_cursor=False, focusable=True)
     detail_header_control = FormattedTextControl(get_detail_header)
     detail_control = FormattedTextControl(get_detail_text)
+    preview_control = FormattedTextControl(get_preview_text)
     footer_control = FormattedTextControl(get_footer)
 
     def apply_notifications(new_notifications: list[dict]) -> None:
         current_id = notifications[selected[0]]["id"] if notifications else None
         notifications.clear()
         notifications.extend(new_notifications)
-        if not notifications:
-            get_app().exit()
-            return
         selected[0] = next(
             (i for i, n in enumerate(notifications) if n["id"] == current_id),
-            min(selected[0], len(notifications) - 1),
+            min(selected[0], max(0, len(notifications) - 1)),
         )
         adjust_scroll()
         get_app().invalidate()
@@ -317,18 +350,24 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     @kb.add("up")
     @kb.add("k")
     def _(event):
+        if not notifications:
+            return
         selected[0] = max(0, selected[0] - 1)
         adjust_scroll()
 
     @kb.add("down")
     @kb.add("j")
     def _(event):
+        if not notifications:
+            return
         selected[0] = min(len(notifications) - 1, selected[0] + 1)
         adjust_scroll()
 
     @kb.add("enter")
     @kb.add("b")
     def _(event):
+        if not notifications:
+            return
         n = notifications[selected[0]]
         url = n["subject"].get("url", "")
         if url:
@@ -341,14 +380,13 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
 
     @kb.add("d")
     def _(event):
+        if not notifications:
+            return
         n = notifications[selected[0]]
         if mark_as_done(n["id"]):
             notifications.pop(selected[0])
-            if not notifications:
-                event.app.exit()
-                return
             if selected[0] >= len(notifications):
-                selected[0] = len(notifications) - 1
+                selected[0] = max(0, len(notifications) - 1)
             adjust_scroll()
 
     @kb.add("r")
@@ -374,7 +412,8 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         HSplit([
             Window(char="─", height=1, style="class:border"),
             Window(detail_header_control, height=1),
-            Window(detail_control, height=5),
+            Window(detail_control, height=DETAIL_META_ROWS),
+            Window(preview_control, height=DETAIL_PREVIEW_ROWS, wrap_lines=True),
             Window(char="─", height=1, style="class:border"),
         ]),
         filter=Condition(detail_visible),
@@ -408,12 +447,27 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             if {n["id"] for n in latest} != {n["id"] for n in notifications} and app.loop is not None:
                 app.loop.call_soon_threadsafe(apply_notifications, latest)
 
+    def preview_worker():
+        while not poll_stop.wait(0.1):
+            idx = selected[0]
+            if not notifications or idx >= len(notifications):
+                continue
+            n = notifications[idx]
+            if n["id"] in preview_cache:
+                continue
+            preview_cache[n["id"]] = None
+            preview_cache[n["id"]] = fetch_preview(n)
+            if app.loop is not None:
+                app.loop.call_soon_threadsafe(app.invalidate)
+
     def enable_focus_reporting() -> None:
         app.output.write_raw("\x1b[?1004h")
         app.output.flush()
 
     poll_thread = threading.Thread(target=poll_for_new, daemon=True)
     poll_thread.start()
+    preview_thread = threading.Thread(target=preview_worker, daemon=True)
+    preview_thread.start()
     try:
         app.run(pre_run=enable_focus_reporting)
     finally:
@@ -428,11 +482,6 @@ def main() -> int:
     with console.status("[bold #e5da74]Fetching notifications..."):
         repo = detect_repo()
         notifications = fetch_notifications(repo)
-
-    if not notifications:
-        scope = f"for {repo}" if repo else ""
-        console.print(f"[#e6db74]No unread notifications {scope}[/]")
-        return 0
 
     all_repos = repo is None
     scope = f"in {repo}" if repo else "across all repos"
