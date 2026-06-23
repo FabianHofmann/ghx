@@ -19,7 +19,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
-DETAIL_META_ROWS = 4
+DETAIL_META_ROWS = 5
 DETAIL_PREVIEW_ROWS = 5
 DETAIL_SECTION_ROWS = DETAIL_META_ROWS + DETAIL_PREVIEW_ROWS + 3
 DETAIL_MIN_ROWS = 18
@@ -44,6 +44,10 @@ MONOKAI_STYLE = Style.from_dict({
     "col-header-dim": "#75715e",
     "chip-type": "#c7b6ff bg:#343142 bold",
     "chip-reason": "#c7b6ff bg:#343142 bold",
+    "chip-state-open": "#a6e22e bg:#2c2f25 bold",
+    "chip-state-closed": "#f92672 bg:#34232a bold",
+    "chip-state-merged": "#ae81ff bg:#2f2a3a bold",
+    "chip-state-draft": "#88846f bg:#2e2d28 bold",
     "border": "#75715e",
     "header": "#34D399 bold",
     "detail-label": "#34D399",
@@ -64,6 +68,13 @@ TYPE_LABELS = {
     "Discussion": "Disc",
     "CheckSuite": "CI",
     "Commit": "Commit",
+}
+
+STATE_STYLE = {
+    "open": "chip-state-open",
+    "closed": "chip-state-closed",
+    "merged": "chip-state-merged",
+    "draft": "chip-state-draft",
 }
 
 REASON_LABELS = {
@@ -145,6 +156,43 @@ def fetch_preview(n: dict) -> str:
     return " ".join(body.split())
 
 
+def fetch_states(items: list[dict]) -> dict[str, str]:
+    targets = []
+    for n in items:
+        if n["subject"]["type"] not in ("PullRequest", "Issue"):
+            continue
+        url = n["subject"].get("url") or ""
+        owner, _, name = n["repository"]["full_name"].partition("/")
+        number = url.rstrip("/").rsplit("/", 1)[-1]
+        if not (owner and name and number.isdigit()):
+            continue
+        targets.append((n["id"], owner, name, int(number)))
+    if not targets:
+        return {}
+    aliases = [
+        f'n{idx}: repository(owner: "{owner}", name: "{name}") {{ '
+        f"issueOrPullRequest(number: {number}) {{ __typename "
+        f"... on PullRequest {{ state isDraft }} ... on Issue {{ state }} }} }}"
+        for idx, (_, owner, name, number) in enumerate(targets)
+    ]
+    query = "query {\n" + "\n".join(aliases) + "\n}"
+    result = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={query}"],
+        capture_output=True, text=True,
+    )
+    if not result.stdout:
+        return {}
+    data = json.loads(result.stdout).get("data") or {}
+    states: dict[str, str] = {}
+    for idx, (nid, *_rest) in enumerate(targets):
+        node = (data.get(f"n{idx}") or {}).get("issueOrPullRequest") or {}
+        state = (node.get("state") or "").lower()
+        if node.get("__typename") == "PullRequest" and state == "open" and node.get("isDraft"):
+            state = "draft"
+        states[nid] = state
+    return states
+
+
 def mark_as_done(thread_id: str) -> bool:
     result = subprocess.run(
         ["gh", "api", "-X", "PATCH", f"/notifications/threads/{thread_id}"],
@@ -159,6 +207,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     has_focus = [True]
     detail_expanded = [False]
     preview_cache: dict[str, str | None] = {}
+    state_cache: dict[str, str | None] = {}
     poll_stop = threading.Event()
     list_header_lines = 2
 
@@ -179,6 +228,8 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     reason_padding = 3
 
     col_type = 10
+    col_state = 8
+    state_padding = 2
     reason_lens = [len(REASON_LABELS.get(n["reason"], n["reason"])) for n in notifications]
     col_reason = min(26, max(12, max(reason_lens, default=12)))
     repo_lens = [len(n["repository"]["full_name"]) for n in notifications]
@@ -187,6 +238,8 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     fixed = (
         prefix_w
         + col_type
+        + col_state
+        + state_padding
         + title_padding
         + (col_repo + repo_padding if all_repos else 0)
         + col_reason
@@ -215,14 +268,25 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             ("class:border", f"({len(notifications)} unread, showing {start}-{end})\n"),
         ]
 
+    def state_cell(n: dict, selected_row: bool) -> tuple[str, str]:
+        if n["subject"]["type"] not in ("PullRequest", "Issue"):
+            return ("class:sel-title" if selected_row else "class:item", f"{'':<{col_state + state_padding}}")
+        state = state_cache.get(n["id"])
+        if state is None:
+            return ("class:item-time", f" {'…':<{col_state + state_padding - 1}}")
+        if not state:
+            return ("class:sel-title" if selected_row else "class:item", f"{'':<{col_state + state_padding}}")
+        chip = f" {state:<{col_state - 2}} "
+        return (f"class:{STATE_STYLE[state]}", chip + " " * state_padding)
+
     def get_list_text():
         col_title = title_width()
         lines = []
-        header_line = f"{'':<{prefix_w}}{'Type':<{col_type}}{'Title':<{col_title + title_padding}}"
+        header_line = f"{'':<{prefix_w}}{'Type':<{col_type}}{'State':<{col_state + state_padding}}{'Title':<{col_title + title_padding}}"
         if all_repos:
             header_line += f"{'Repo':<{col_repo + repo_padding}}"
         header_line += f"{'Reason':<{col_reason + reason_padding}}{'When':<{col_time}}\n"
-        sep = f"{'':<{prefix_w}}{'─' * col_type}{'─' * (col_title + title_padding)}"
+        sep = f"{'':<{prefix_w}}{'─' * col_type}{'─' * (col_state + state_padding)}{'─' * (col_title + title_padding)}"
         if all_repos:
             sep += f"{'─' * (col_repo + repo_padding)}"
         sep += f"{'─' * (col_reason + reason_padding)}{'─' * col_time}"
@@ -240,6 +304,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             prefix = " ▶ " if is_sel else "   "
             type_label = TYPE_LABELS.get(n["subject"]["type"], n["subject"]["type"][:4])
             type_chip = f" {ellipsize(type_label, col_type - 2):<{col_type - 2}} "
+            state_style, state_chip = state_cell(n, is_sel)
             title = ellipsize(n["subject"]["title"], col_title).ljust(col_title)
             repo = ellipsize(n["repository"]["full_name"], col_repo).ljust(col_repo) if all_repos else ""
             reason_label = REASON_LABELS.get(n["reason"], n["reason"])
@@ -249,6 +314,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             if is_sel:
                 lines.append(("class:sel-prefix", prefix))
                 lines.append(("class:chip-type", type_chip))
+                lines.append((state_style, state_chip))
                 lines.append(("class:sel-title", f" {title}   "))
                 if all_repos:
                     lines.append(("class:sel-repo", f"{repo}   "))
@@ -261,6 +327,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             else:
                 lines.append(("class:item", prefix))
                 lines.append(("class:chip-type", type_chip))
+                lines.append((state_style, state_chip))
                 lines.append(("class:item", f" {title}   "))
                 if all_repos:
                     lines.append(("class:item-repo", f"{repo}   "))
@@ -284,12 +351,24 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         n = notifications[selected[0]]
         type_label = TYPE_LABELS.get(n["subject"]["type"], n["subject"]["type"])
         reason = REASON_LABELS.get(n["reason"], n["reason"])
+        state = state_cache.get(n["id"])
+        if n["subject"]["type"] not in ("PullRequest", "Issue"):
+            state_part = [("class:item-time", "n/a")]
+        elif state is None:
+            state_part = [("class:item-time", "loading…")]
+        elif not state:
+            state_part = [("class:item-time", "unknown")]
+        else:
+            state_part = [(f"class:{STATE_STYLE[state]}", f" {state} ")]
         lines = [
             ("class:detail-label", "  Repo: "),
             ("class:item-repo", n["repository"]["full_name"]),
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Type: "),
             ("class:sel-type", type_label),
+            ("class:detail-value", "\n"),
+            ("class:detail-label", "  State: "),
+            *state_part,
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Reason: "),
             ("class:item-reason", reason),
@@ -469,6 +548,21 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             if app.loop is not None:
                 app.loop.call_soon_threadsafe(app.invalidate)
 
+    def state_worker():
+        while not poll_stop.wait(0.1):
+            pending = [n for n in list(notifications) if n["id"] not in state_cache]
+            if not pending:
+                continue
+            for n in pending:
+                state_cache[n["id"]] = None
+            for start in range(0, len(pending), 50):
+                chunk = pending[start:start + 50]
+                states = fetch_states(chunk)
+                for n in chunk:
+                    state_cache[n["id"]] = states.get(n["id"], "")
+                if app.loop is not None:
+                    app.loop.call_soon_threadsafe(app.invalidate)
+
     def enable_focus_reporting() -> None:
         app.output.write_raw("\x1b[?1004h")
         app.output.flush()
@@ -477,6 +571,8 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     poll_thread.start()
     preview_thread = threading.Thread(target=preview_worker, daemon=True)
     preview_thread.start()
+    state_thread = threading.Thread(target=state_worker, daemon=True)
+    state_thread.start()
     try:
         app.run(pre_run=enable_focus_reporting)
     finally:
