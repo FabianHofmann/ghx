@@ -157,6 +157,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     selected = [0]
     scroll_offset = [0]
     has_focus = [True]
+    detail_expanded = [False]
     preview_cache: dict[str, str | None] = {}
     poll_stop = threading.Event()
     list_header_lines = 2
@@ -165,7 +166,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
         return get_app().output.get_size().columns - 1
 
     def detail_visible() -> bool:
-        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+        return detail_expanded[0] and get_app().output.get_size().rows >= DETAIL_MIN_ROWS
 
     def list_capacity() -> int:
         total = get_app().output.get_size().rows
@@ -321,6 +322,8 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
             ("class:footer", "browse  "),
             ("class:footer-key", "d "),
             ("class:footer", "done  "),
+            ("class:footer-key", "Space "),
+            ("class:footer", f"{'hide' if detail_expanded[0] else 'details'}  "),
             ("class:footer-key", "r "),
             ("class:footer", "refresh  "),
             ("class:footer-key", "q/Esc "),
@@ -389,6 +392,12 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
                 selected[0] = max(0, len(notifications) - 1)
             adjust_scroll()
 
+    @kb.add(" ")
+    def _(event):
+        detail_expanded[0] = not detail_expanded[0]
+        adjust_scroll()
+        event.app.invalidate()
+
     @kb.add("r")
     def _(event):
         apply_notifications(fetch_notifications(repo))
@@ -450,7 +459,7 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     def preview_worker():
         while not poll_stop.wait(0.1):
             idx = selected[0]
-            if not notifications or idx >= len(notifications):
+            if not detail_expanded[0] or not notifications or idx >= len(notifications):
                 continue
             n = notifications[idx]
             if n["id"] in preview_cache:
