@@ -8,6 +8,26 @@ import subprocess
 import json
 import sys
 import shutil
+
+PR_FIELDS = "number,title,headRefName,author,isDraft,state,reviewDecision,additions,deletions"
+
+
+def build_list_cmd(mine_only: bool) -> list[str]:
+    cmd = ["gh", "pr", "list", "--json", PR_FIELDS, "--limit", "50"]
+    if mine_only:
+        cmd.extend(["--author", "@me"])
+    return cmd
+
+
+parser = argparse.ArgumentParser(description="Browse and checkout PRs")
+parser.add_argument("-m", "--mine", action="store_true", help="Only show PRs authored by me")
+args = parser.parse_args()
+
+# Start the fetch before the heavy TUI imports so the gh round-trip overlaps import time.
+pr_fetch = subprocess.Popen(
+    build_list_cmd(args.mine), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+)
+
 from prompt_toolkit import Application
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
@@ -77,18 +97,11 @@ def status_text(pr: dict) -> tuple[str, str]:
     return "detail-value", "pending"
 
 
-def get_prs(mine_only: bool = False) -> list[dict]:
-    cmd = [
-        "gh", "pr", "list", "--json",
-        "number,title,headRefName,author,isDraft,state,reviewDecision,additions,deletions",
-        "--limit", "50",
-    ]
-    if mine_only:
-        cmd.extend(["--author", "@me"])
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        sys.exit(f"Failed to fetch PRs: {result.stderr}")
-    return json.loads(result.stdout)
+def collect_prs(proc: subprocess.Popen) -> list[dict]:
+    out, err = proc.communicate()
+    if proc.returncode != 0:
+        sys.exit(f"Failed to fetch PRs: {err}")
+    return json.loads(out)
 
 
 def checkout_pr(number: int) -> None:
@@ -358,14 +371,10 @@ def run_selector(prs: list[dict]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Browse and checkout PRs")
-    parser.add_argument("-m", "--mine", action="store_true", help="Only show PRs authored by me")
-    args = parser.parse_args()
-
     console = Console()
 
     with console.status("[bold #e5da74]Fetching PRs..."):
-        prs = get_prs(mine_only=args.mine)
+        prs = collect_prs(pr_fetch)
 
     if not prs:
         console.print("[#e6db74]No open PRs found[/]")
