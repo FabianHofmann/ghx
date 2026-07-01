@@ -18,7 +18,7 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
-from prompt_toolkit.layout import ConditionalContainer, Dimension, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import ConditionalContainer, Dimension, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -83,7 +83,6 @@ MONOKAI_STYLE = Style.from_dict({
     "footer-key": "#34D399 bold",
     "new-notif": "#f92672 bold",
     "focus-bar": "#a6e22e bold",
-    "focus-bar-off": "#3a3d34",
     "header-off": "#75715e bold",
 })
 
@@ -499,23 +498,19 @@ def run_selector(rows: list[dict], pr_number: int) -> None:
         ),
         filter=Condition(detail_visible),
     )
-    def bar_style() -> str:
-        return "class:focus-bar" if has_focus[0] else "class:focus-bar-off"
+    def bar_char() -> str:
+        return "━" if has_focus[0] else " "
 
-    accent_bar = Window(width=1, char="┃", style=bar_style)
+    accent_bar = Window(height=1, char=bar_char, style="class:focus-bar")
 
     layout = Layout(
-        VSplit(
+        HSplit(
             [
+                Window(header_control, height=1),
+                Window(list_control, height=Dimension(min=1, weight=1)),
+                detail_section,
+                Window(footer_control, height=1),
                 accent_bar,
-                HSplit(
-                    [
-                        Window(header_control, height=1),
-                        Window(list_control, height=Dimension(min=1, weight=1)),
-                        detail_section,
-                        Window(footer_control, height=1),
-                    ]
-                ),
             ]
         )
     )

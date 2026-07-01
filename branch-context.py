@@ -12,7 +12,7 @@ from prompt_toolkit.application import get_app
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
-from prompt_toolkit.layout import Dimension, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import Dimension, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -43,7 +43,6 @@ MONOKAI_STYLE = Style.from_dict({
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
     "focus-bar": "#a6e22e bold",
-    "focus-bar-off": "#3a3d34",
 })
 
 STATE_STYLE = {
@@ -266,17 +265,15 @@ def run_viewer(branch: str, repo: str, owner: str, name: str, pr: int | None, co
     def _(event):
         event.app.exit()
 
-    def bar_style() -> str:
-        return "class:focus-bar" if state["focus"] else "class:focus-bar-off"
+    def bar_char() -> str:
+        return "━" if state["focus"] else " "
 
-    layout = Layout(VSplit([
-        Window(width=1, char="┃", style=bar_style),
-        HSplit([
-            Window(FormattedTextControl(get_header), height=2),
-            Window(FormattedTextControl(get_list_text, show_cursor=False, focusable=True),
-                   height=Dimension(min=1, weight=1)),
-            Window(FormattedTextControl(get_footer), height=1),
-        ]),
+    layout = Layout(HSplit([
+        Window(FormattedTextControl(get_header), height=2),
+        Window(FormattedTextControl(get_list_text, show_cursor=False, focusable=True),
+               height=Dimension(min=1, weight=1)),
+        Window(FormattedTextControl(get_footer), height=1),
+        Window(height=1, char=bar_char, style="class:focus-bar"),
     ]))
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
