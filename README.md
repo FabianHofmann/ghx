@@ -17,6 +17,7 @@ Standalone Python CLI scripts for GitHub workflows. Each script is self-containe
 | `checkout-pr.py` | Interactive PR selector with checkout |
 | `select-comments.py` | Browse unresolved PR review comments with code preview, reply, resolve, and clipboard copy |
 | `notifications.py` | Browse unread GitHub notifications |
+| `branch-context.py` | Live TUI showing the current branch's PR and its linked issues |
 
 ### open-pr.py
 
@@ -77,6 +78,17 @@ Browse unread GitHub notifications. Auto-scopes to current repo when inside a gi
 | `r` | Refresh |
 | `q`, `Esc` | Quit |
 
+### branch-context.py
+
+Full-screen TUI showing the current branch's PR and the issues it closes (`closingIssuesReferences`), with their state and labels. Background polling (30s). Falls back to a static listing when piped.
+
+| Key | Action |
+|---|---|
+| `j/k`, `↑/↓` | Navigate |
+| `Enter`, `b` | Open in browser |
+| `r` | Refresh |
+| `q`, `Esc` | Quit |
+
 ## Setup
 
 Add shell aliases to your `~/.zshrc` (or equivalent), adjusting the path:
@@ -87,6 +99,7 @@ alias gha='/path/to/ghx/pr-ci.py'
 alias ghp='/path/to/ghx/checkout-pr.py'
 alias ghc='/path/to/ghx/select-comments.py'
 alias ghn='/path/to/ghx/notifications.py'
+alias ghx='/path/to/ghx/branch-context.py'
 ```
 
 | Alias | Script | Mnemonic |
@@ -96,6 +109,7 @@ alias ghn='/path/to/ghx/notifications.py'
 | `ghp` | `checkout-pr.py` | **p**ull requests |
 | `ghc` | `select-comments.py` | **c**omments |
 | `ghn` | `notifications.py` | **n**otifications |
+| `ghx` | `branch-context.py` | conte**x**t |
 
 Make sure the scripts are executable:
 

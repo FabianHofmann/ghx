@@ -417,9 +417,14 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
     footer_control = FormattedTextControl(get_footer)
 
     def apply_notifications(new_notifications: list[dict]) -> None:
+        prev_updated = {n["id"]: n["updated_at"] for n in notifications}
         current_id = notifications[selected[0]]["id"] if notifications else None
         notifications.clear()
         notifications.extend(new_notifications)
+        for n in notifications:
+            if prev_updated.get(n["id"]) != n["updated_at"]:
+                state_cache.pop(n["id"], None)
+                preview_cache.pop(n["id"], None)
         selected[0] = next(
             (i for i, n in enumerate(notifications) if n["id"] == current_id),
             min(selected[0], max(0, len(notifications) - 1)),
@@ -526,13 +531,16 @@ def run_selector(notifications: list[dict], all_repos: bool, repo: str | None) -
 
     app = Application(layout=layout, key_bindings=kb, style=MONOKAI_STYLE, full_screen=True)
 
+    def signature(items: list[dict]) -> set[tuple[str, str]]:
+        return {(n["id"], n["updated_at"]) for n in items}
+
     def poll_for_new():
         while not poll_stop.wait(30):
             try:
                 latest = fetch_notifications(repo)
             except Exception:
                 continue
-            if {n["id"] for n in latest} != {n["id"] for n in notifications} and app.loop is not None:
+            if signature(latest) != signature(notifications) and app.loop is not None:
                 app.loop.call_soon_threadsafe(apply_notifications, latest)
 
     def preview_worker():
