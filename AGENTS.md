@@ -1,36 +1,29 @@
 ## Project Overview
 
-Standalone Python CLI scripts for GitHub workflows using `uv run` with PEP 723 inline script metadata. Each script is self-contained with its dependencies declared inline.
+A combined GitHub TUI (`ghx.py`) built on prompt_toolkit, run standalone via `uv run` with PEP 723 inline script metadata. Four switchable views (PRs, CI, Comments, Notifications) plus a non-interactive branch-context status bar.
 
-## Running Scripts
+## Running
 
-Scripts are executed directly via `uv run`:
 ```bash
-./open-pr.py          # Opens current branch's PR in browser
-./pr-ci.py            # Shows running CI checks for current branch's PR
-./checkout-pr.py      # Interactive PR selector and checkout
-./checkout-pr.py -m   # Show only PRs authored by current user
-./select-comments.py  # Browse unresolved PR comments, open in Zed
-./notifications.py    # Show unread notifications
-./branch-context.py   # Show current branch's PR and its linked issues
+./ghx.py             # PRs view
+./ghx.py ci          # Initial view: prs, ci, comments, notifs (prefix-matched)
+./ghx.py -m          # Only PRs authored by current user
+./ghx.py | cat       # Non-TTY: static branch-context printout
 ```
 
 ## Architecture
 
-**Script Pattern**: Each script uses the shebang `#!/usr/bin/env -S uv run` with inline dependency declarations:
-```python
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["prompt_toolkit", "rich"]
-# ///
-```
+- `ghx.py` — entry script. Prefetches gh data via `subprocess.Popen` BEFORE importing prompt_toolkit (startup optimization — keep this ordering), then runs a rerun loop: `Shell.run()` returns a pending action (`Checkout`, `Reply`) or `None`; actions execute outside the TUI, then the app re-enters with view state intact.
+- `ghx_app/base.py` — `Shared` (repo, branch, pr_number, mine) mutable app-wide state; `ListView` ABC providing cursor/scroll state, `list_capacity`/`adjust_scroll`, lazy background loading (`ensure_loaded`/`finish_load`), base nav keybindings (j/k/↑/↓, r).
+- `ghx_app/shell.py` — layout (header / list / per-view detail panes / status bar / footer / focus accent bar), view switching (`1`–`4`, tab), global keys (`o` open PR, `q` quit), `Scheduler` thread polling the status bar (30s) and the active view (per-view `poll_interval`); terminal focus in/out reporting via F23/F24 pseudo-keys.
+- `ghx_app/statusbar.py` — branch/repo/PR/linked-issues line, updates `Shared.pr_number` on poll.
+- `ghx_app/views/` — one module per view; each implements `fetch`, `list_fragments`, `title`, `counts`, `hints`, and optionally `detail_containers`, `poll`, `bindings`, `chrome_rows`, `on_branch_change`.
+- `ghx_app/theme.py` / `gh.py` / `util.py` — merged Monokai style dict, gh CLI/GraphQL helpers, text helpers.
 
-**External Dependencies**:
-- `gh` CLI for all GitHub API interactions
-- `zed` editor for opening files from `select-comments.py`
+**External dependencies**: `gh` CLI for all GitHub interactions, `zed` for opening files, `xdg-open` for URLs.
 
-**UI Pattern**: Interactive scripts use `prompt_toolkit` with Monokai-style themes for TUI selectors with vim-style navigation (j/k/↑/↓).
+**Conventions**: `chrome_rows()` must mirror each view's `ConditionalContainer` visibility so scroll capacity stays correct. Poll semantics differ intentionally: CI/Comments only flag `has_new` (manual `r` applies), Notifications auto-applies preserving selection by id.
 
-**Usage**: 
+## Usage
 
-The scripts are referenced in ~/.zshrc with aliases in the section beginning with `# EDITOR-SCRIPT-ALIASES` following the pattern `alias <short-command>=<script_path>`. Adjust relevant aliases as needed. Make sure the scripts are executable (`chmod +x <script_path>`).
+The `ghx` alias in `~/.zshrc` (section `# EDITOR-SCRIPT-ALIASES`) points to `ghx.py`. Keep the script executable (`chmod +x ghx.py`).

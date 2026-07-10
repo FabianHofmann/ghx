@@ -1,120 +1,113 @@
 # ghx
 
-Standalone Python CLI scripts for GitHub workflows. Each script is self-contained using `uv run` with [PEP 723](https://peps.python.org/pep-0723/) inline script metadata — no virtual environment or `pip install` needed.
+A combined GitHub TUI for everyday PR workflows: browse and checkout PRs, watch CI checks, work through unresolved review comments, and triage notifications — all in one full-screen app with a persistent branch-context status bar.
+
+Runs standalone via `uv run` with [PEP 723](https://peps.python.org/pep-0723/) inline script metadata — no virtual environment or `pip install` needed.
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/)
 - [gh](https://cli.github.com/) CLI (authenticated)
-- [Zed](https://zed.dev/) editor (for `select-comments.py`)
+- [Zed](https://zed.dev/) editor (for opening review comments)
 
-## Scripts
+## Usage
 
-| Script | Description |
-|---|---|
-| `open-pr.py` | Opens current branch's PR in the browser |
-| `pr-ci.py` | Interactive TUI to browse CI check statuses for the current branch's PR |
-| `checkout-pr.py` | Interactive PR selector with checkout |
-| `select-comments.py` | Browse unresolved PR review comments with code preview, reply, resolve, and clipboard copy |
-| `notifications.py` | Browse unread GitHub notifications |
-| `branch-context.py` | Live TUI showing the current branch's PR and its linked issues |
+```bash
+./ghx.py             # Start on the PRs view
+./ghx.py ci          # Start on a specific view (prefix-matched: prs, ci, comments, notifs)
+./ghx.py -m          # PRs view filtered to PRs authored by me
+./ghx.py | cat       # Non-interactive: print branch context (current PR + linked issues)
+```
 
-### open-pr.py
+Outside a git repository only `ghx notifs` works (notifications across all repos).
 
-Opens the current branch's PR in your default browser. No TUI, just fire-and-forget.
+## Views
 
-### pr-ci.py
-
-Full-screen TUI showing CI check statuses with background polling (15s). Falls back to a static Rich table when piped.
+Switch views with `1`–`4` or `Tab`/`Shift-Tab`. Global keys everywhere:
 
 | Key | Action |
 |---|---|
+| `1`–`4`, `Tab` | Switch view |
 | `j/k`, `↑/↓` | Navigate |
-| `Enter` | Open check URL |
-| `r` | Refresh |
+| `r` | Refresh active view |
+| `o` | Open current branch's PR in browser |
 | `q`, `Esc` | Quit |
 
-### checkout-pr.py
+### 1 · PRs
 
-Interactive PR selector showing PR number, title, branch, author, and review status (draft/approved/changes-requested).
-
-```
-./checkout-pr.py       # All open PRs
-./checkout-pr.py -m    # Only your PRs
-```
+Open PRs with branch, author, and review status (draft/approved/changes/review/pending). Prefetched before the TUI imports for a fast start.
 
 | Key | Action |
 |---|---|
-| `j/k`, `↑/↓` | Navigate |
 | `Enter` | Checkout PR |
 | `b` | Open in browser |
-| `q`, `Esc` | Quit |
+| `m` | Toggle "only my PRs" filter |
 
-### select-comments.py
+### 2 · CI
 
-Browse unresolved PR review threads with syntax-highlighted code snippets. Background polling (30s).
+CI check statuses for the current branch's PR. Background polling (15s) flags updates with `● new`; `r` applies them.
 
 | Key | Action |
 |---|---|
-| `j/k` | Navigate |
+| `Enter` | Open check URL |
+
+### 3 · Comments
+
+Unresolved PR review threads with syntax-highlighted code preview and full thread bodies. Background polling (30s).
+
+| Key | Action |
+|---|---|
 | `Space`, `x` | Multi-select |
 | `Enter` | Open in Zed |
 | `b` | Open in browser |
 | `a` | Reply inline |
 | `c` | Copy Claude-formatted prompt to clipboard |
-| `d` | Resolve thread |
-| `r` | Refresh |
-| `q` | Quit |
+| `d` | Resolve thread(s) |
 
-### notifications.py
+### 4 · Notifs
 
-Browse unread GitHub notifications. Auto-scopes to current repo when inside a git repo. Background polling (30s).
+Unread GitHub notifications, auto-scoped to the current repo (all repos when outside one). Auto-refreshes every 30s; PR/issue open/closed state and body previews load lazily in the background.
 
 | Key | Action |
 |---|---|
-| `j/k`, `↑/↓` | Navigate |
 | `Enter`, `b` | Open in browser |
 | `d` | Mark done |
-| `r` | Refresh |
-| `q`, `Esc` | Quit |
+| `Space` | Toggle detail pane |
 
-### branch-context.py
+## Status bar
 
-Full-screen TUI showing the current branch's PR and the issues it closes (`closingIssuesReferences`), with their state and labels. Background polling (30s). Falls back to a static listing when piped.
+The bottom status bar (no selection, always visible) shows the current branch context and refreshes every 30s:
 
-| Key | Action |
-|---|---|
-| `j/k`, `↑/↓` | Navigate |
-| `Enter`, `b` | Open in browser |
-| `r` | Refresh |
-| `q`, `Esc` | Quit |
+```
+feat/xyz · owner/repo · PR #123 open Add the thing ⇒ #45 open #46 closed
+```
+
+Branch, repository, the branch's PR with state, and the issues it closes (`closingIssuesReferences`) with their states.
 
 ## Setup
 
-Add shell aliases to your `~/.zshrc` (or equivalent), adjusting the path:
+Add a shell alias to your `~/.zshrc` (or equivalent), adjusting the path:
 
 ```bash
-alias ghb='/path/to/ghx/open-pr.py'
-alias gha='/path/to/ghx/pr-ci.py'
-alias ghp='/path/to/ghx/checkout-pr.py'
-alias ghc='/path/to/ghx/select-comments.py'
-alias ghn='/path/to/ghx/notifications.py'
-alias ghx='/path/to/ghx/branch-context.py'
+alias ghx='/path/to/ghx/ghx.py'
 ```
 
-| Alias | Script | Mnemonic |
-|---|---|---|
-| `ghb` | `open-pr.py` | **b**rowser |
-| `gha` | `pr-ci.py` | **a**ctions |
-| `ghp` | `checkout-pr.py` | **p**ull requests |
-| `ghc` | `select-comments.py` | **c**omments |
-| `ghn` | `notifications.py` | **n**otifications |
-| `ghx` | `branch-context.py` | conte**x**t |
-
-Make sure the scripts are executable:
+Make sure the script is executable:
 
 ```bash
-chmod +x /path/to/ghx/*.py
+chmod +x /path/to/ghx/ghx.py
 ```
 
-All interactive scripts share a Monokai dark theme and vim-style navigation.
+## Architecture
+
+`ghx.py` is a thin PEP 723 entry script that prefetches gh data with `subprocess.Popen` before the heavy TUI imports, then hands over to the local `ghx_app/` package:
+
+- `theme.py` — shared Monokai style, state chips, pygments token colors
+- `gh.py` — gh CLI / GraphQL helpers, branch-context query
+- `util.py` — text helpers (`ellipsize`, `relative_time`)
+- `base.py` — `Shared` state and the `ListView` base class (cursor/scroll, lazy loading, nav keys)
+- `shell.py` — app shell: layout, view switching, global keys, footer, poll scheduler
+- `statusbar.py` — branch-context status bar
+- `views/` — the four views
+
+Actions that must leave the TUI (checkout, inline reply) exit the app with a pending action; a rerun loop in `ghx.py` executes it and re-enters with view state intact. The terminal focus in/out state is reflected by the bottom accent bar.
