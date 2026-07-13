@@ -5,6 +5,7 @@ import time
 from typing import Any, Callable
 
 from prompt_toolkit import Application
+from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merge_key_bindings
@@ -97,25 +98,36 @@ class Shell:
         return [(hdr, f"  {view.title()} "), ("class:border", f"({view.counts()}{shown})")]
 
     def footer_fragments(self) -> StyleText:
-        parts: StyleText = []
+        tabs: StyleText = [("", " ")]
         for i, view in enumerate(self.views):
-            style = "class:footer-key" if view is self.active_view else "class:footer"
-            parts.append((style, f" {i + 1}:{view.label}"))
-        parts.append(("class:footer", "  │"))
-        for key, label in self.active_view.hints():
-            parts.append(("class:footer-key", f" {key} "))
-            parts.append(("class:footer", label))
-        parts.append(("class:footer-key", " r "))
-        parts.append(("class:footer", "refresh"))
-        parts.append(("class:footer-key", " o "))
-        parts.append(("class:footer", "pr"))
-        parts.append(("class:footer-key", " q "))
-        parts.append(("class:footer", "quit"))
+            style = "class:tab-active" if view is self.active_view else "class:tab"
+            tabs.append((style, f" {i + 1} {view.label} "))
+            tabs.append(("", " "))
+        middle: StyleText = []
         if self.active_view.has_new:
-            parts.append(("class:new-notif", "  ● new"))
+            middle.append(("class:new-notif", " ● new"))
         if self.message:
-            parts.append(("class:footer", f"  {self.message}"))
-        return parts
+            middle.append(("class:footer", f" {self.message}"))
+        def hint_fragments(separator: str, with_labels: bool) -> StyleText:
+            fragments: StyleText = []
+            for key, label in [*self.active_view.hints(), ("q", "quit")]:
+                if fragments:
+                    fragments.append(("class:footer-dim", separator))
+                fragments.append(("class:footer-key", key))
+                if with_labels:
+                    fragments.append(("class:footer", f" {label}"))
+            fragments.append(("", "  "))
+            return fragments
+
+        width = get_app().output.get_size().columns
+        base_used = sum(len(text) for _, text in [*tabs, *middle])
+        for separator, with_labels in [("  ·  ", True), (" · ", True), (" · ", False)]:
+            right = hint_fragments(separator, with_labels)
+            used = base_used + sum(len(text) for _, text in right)
+            if used + 2 <= width:
+                break
+        pad = max(2, width - used)
+        return [*tabs, *middle, ("", " " * pad), *right]
 
     def global_bindings(self) -> KeyBindings:
         kb = KeyBindings()

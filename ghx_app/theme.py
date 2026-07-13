@@ -66,6 +66,9 @@ MONOKAI_STYLE = Style.from_dict({
     "comment-header": "#34D399 bold",
     "footer": "#88846f",
     "footer-key": "#34D399 bold",
+    "footer-dim": "#5a5749",
+    "tab": "#88846f",
+    "tab-active": "#272822 bg:#34D399 bold",
     "new-notif": "#f92672 bold",
     "focus-bar": "#a6e22e bold",
 })
