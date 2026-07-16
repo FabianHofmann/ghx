@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ghx_app import gh
 
-VIEW_NAMES = ["prs", "ci", "comments", "notifs"]
+VIEW_NAMES = ["prs", "issues", "ci", "comments", "notifs"]
 
 STATIC_STATE_COLOR = {"open": "#a6e22e", "closed": "#f92672", "merged": "#ae81ff", "draft": "#88846f"}
 
@@ -52,11 +52,20 @@ def read_output(proc: subprocess.Popen[str]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs, CI, review comments, notifications")
+    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs, issues, CI, review comments, notifications")
     parser.add_argument("view", nargs="?", default="prs", help=f"initial view: {', '.join(VIEW_NAMES)} (prefix ok)")
-    parser.add_argument("-m", "--mine", action="store_true", help="show only PRs authored by me")
+    parser.add_argument("-m", "--mine", action="store_true", help="show only PRs authored by me / issues assigned to me")
+    parser.add_argument("-o", "--open", action="store_true", help="open the current branch's PR in the browser and exit")
     args = parser.parse_args()
     view_name = resolve_view(args.view)
+
+    if args.open:
+        number = gh.get_pr_number()
+        if number is None:
+            print("No open PR for this branch", file=sys.stderr)
+            return 1
+        gh.open_pr_in_browser(number)
+        return 0
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         repo = gh.detect_repo()
@@ -71,6 +80,8 @@ def main() -> int:
     }
     if view_name == "prs":
         prefetch["prs"] = popen(["gh", *gh.pr_list_args(args.mine)])
+    elif view_name == "issues":
+        prefetch["issues"] = popen(["gh", *gh.issue_list_args(args.mine)])
 
     from ghx_app.base import Shared
     from ghx_app.shell import Shell
@@ -88,10 +99,11 @@ def main() -> int:
 
     shared = Shared(repo=repo, branch=branch, pr_number=pr_number, mine=args.mine)
     views = build_views(shared)
-    if "prs" in prefetch:
-        out, _ = prefetch["prs"].communicate()
-        if prefetch["prs"].returncode == 0:
-            views[0].seed(json.loads(out))
+    for name in ("prs", "issues"):
+        if name in prefetch:
+            out, _ = prefetch[name].communicate()
+            if prefetch[name].returncode == 0:
+                views[VIEW_NAMES.index(name)].seed(json.loads(out))
 
     shell = Shell(shared, views, StatusBar(shared), VIEW_NAMES.index(view_name))
     while True:

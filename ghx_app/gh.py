@@ -3,6 +3,7 @@ import subprocess
 from typing import Any
 
 PR_LIST_FIELDS = "number,title,headRefName,author,isDraft,state,reviewDecision,additions,deletions"
+ISSUE_LIST_FIELDS = "number,title,author,state,labels,assignees,updatedAt,url"
 
 CONTEXT_QUERY = """
 query($owner: String!, $name: String!, $pr: Int!) {
@@ -45,6 +46,13 @@ def pr_list_args(mine: bool) -> list[str]:
     args = ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "50"]
     if mine:
         args.extend(["--author", "@me"])
+    return args
+
+
+def issue_list_args(mine: bool) -> list[str]:
+    args = ["issue", "list", "--json", ISSUE_LIST_FIELDS, "--limit", "50"]
+    if mine:
+        args.extend(["--assignee", "@me"])
     return args
 
 
