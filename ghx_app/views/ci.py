@@ -100,12 +100,8 @@ class CiView(ListView):
         data = gh_json(["pr", "view", str(pr), "--json", "statusCheckRollup"])
         return make_rows(data.get("statusCheckRollup") or [])
 
-    def poll(self) -> None:
-        latest = self.fetch()
-        current = {(r["name"], r["state"]) for r in self.items}
-        if {(r["name"], r["state"]) for r in latest} != current:
-            self.has_new = True
-            self.shell.invalidate()
+    def changed(self, latest: list[dict]) -> bool:
+        return {(r["name"], r["state"]) for r in latest} != {(r["name"], r["state"]) for r in self.items}
 
     def on_branch_change(self) -> None:
         self.items = []

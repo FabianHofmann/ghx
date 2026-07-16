@@ -23,6 +23,7 @@ def assignee_of(issue: dict) -> str:
 
 class IssuesView(ListView):
     label = "Issues"
+    poll_interval = 30.0
 
     def __init__(self, shared) -> None:
         super().__init__(shared)
@@ -43,6 +44,9 @@ class IssuesView(ListView):
 
     def fetch(self) -> list[dict]:
         return gh_json(issue_list_args(self.shared.mine))
+
+    def changed(self, latest: list[dict]) -> bool:
+        return latest != self.all_items
 
     def apply(self, items: list[dict]) -> None:
         self.all_items = items

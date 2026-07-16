@@ -30,6 +30,7 @@ class Shared:
 class ListView(ABC):
     label: ClassVar[str]
     poll_interval: ClassVar[float | None] = None
+    background_load: ClassVar[bool] = False
 
     shell: Shell
 
@@ -65,8 +66,16 @@ class ListView(ABC):
     def chrome_rows(self) -> int:
         return 0
 
+    def changed(self, latest: list[dict]) -> bool:
+        return latest != self.items
+
     def poll(self) -> None:
-        pass
+        latest = self.fetch()
+        if self.changed(latest):
+            self.shell.schedule(lambda: self.apply(latest))
+
+    def tab_badge(self) -> str:
+        return ""
 
     def on_run_start(self) -> None:
         pass

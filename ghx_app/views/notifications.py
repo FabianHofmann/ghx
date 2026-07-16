@@ -111,13 +111,15 @@ def signature(items: list[dict]) -> set[tuple[str, str]]:
 
 class NotificationsView(ListView):
     label = "Notifs"
-    poll_interval = 30.0
+    poll_interval = 20.0
+    background_load = True
 
     def __init__(self, shared) -> None:
         super().__init__(shared)
         self.detail_expanded = False
         self.preview_cache: dict[str, str | None] = {}
         self.state_cache: dict[str, str | None] = {}
+        self.seen_ids: set[str] = set()
         self.workers_stop: threading.Event | None = None
 
     def all_repos(self) -> bool:
@@ -132,10 +134,19 @@ class NotificationsView(ListView):
     def fetch(self) -> list[dict]:
         return fetch_notifications(self.shared.repo)
 
-    def poll(self) -> None:
-        latest = self.fetch()
-        if signature(latest) != signature(self.items):
-            self.shell.schedule(lambda: self.apply(latest))
+    def changed(self, latest: list[dict]) -> bool:
+        return signature(latest) != signature(self.items)
+
+    def tab_badge(self) -> str:
+        count = len(self.items)
+        if not count:
+            return ""
+        return f"●{count}" if self.has_new else f"({count})"
+
+    def on_activate(self) -> None:
+        super().on_activate()
+        self.seen_ids = {n["id"] for n in self.items}
+        self.has_new = False
 
     def apply(self, items: list[dict]) -> None:
         prev_updated = {n["id"]: n["updated_at"] for n in self.items}
@@ -150,6 +161,11 @@ class NotificationsView(ListView):
             min(self.cursor, max(0, len(items) - 1)),
         )
         self.adjust_scroll()
+        if self.is_active():
+            self.seen_ids = {n["id"] for n in items}
+            self.has_new = False
+        else:
+            self.has_new = any(n["id"] not in self.seen_ids for n in items)
         self.shell.invalidate()
 
     def finish_load(self, items: list[dict]) -> None:

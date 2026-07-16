@@ -28,20 +28,28 @@ class Scheduler(threading.Thread):
         self.shell = shell
         self.stop = stop
         self.last: dict[int, float] = {}
+        self.inflight: set[int] = set()
 
     def run(self) -> None:
         while not self.stop.wait(1.0):
             now = time.monotonic()
-            for source in (self.shell.statusbar, self.shell.active_view):
-                if source.poll_interval is None or not source.ready():
+            for source in (self.shell.statusbar, *self.shell.views):
+                key = id(source)
+                if source.poll_interval is None or not source.ready() or key in self.inflight:
                     continue
-                if now - self.last.setdefault(id(source), now) < source.poll_interval:
+                if now - self.last.setdefault(key, now) < source.poll_interval:
                     continue
-                self.last[id(source)] = now
-                try:
-                    source.poll()
-                except Exception:
-                    pass
+                self.last[key] = now
+                self.inflight.add(key)
+                threading.Thread(target=self.run_poll, args=(source, key), daemon=True).start()
+
+    def run_poll(self, source, key: int) -> None:
+        try:
+            source.poll()
+        except Exception:
+            pass
+        finally:
+            self.inflight.discard(key)
 
 
 class Shell:
@@ -102,10 +110,11 @@ class Shell:
         for i, view in enumerate(self.views):
             style = "class:tab-active" if view is self.active_view else "class:tab"
             tabs.append((style, f" {i + 1} {view.label} "))
+            badge = view.tab_badge()
+            if badge:
+                tabs.append(("class:new-notif" if view.has_new else "class:footer-dim", f"{badge} "))
             tabs.append(("", " "))
         middle: StyleText = []
-        if self.active_view.has_new:
-            middle.append(("class:new-notif", " ● new"))
         if self.message:
             middle.append(("class:footer", f" {self.message}"))
         def hint_fragments(separator: str, with_labels: bool) -> StyleText:
@@ -194,6 +203,8 @@ class Shell:
         self.statusbar.ensure_loaded()
         self.active_view.on_activate()
         for view in self.views:
+            if view.background_load and view is not self.active_view:
+                view.ensure_loaded()
             view.on_run_start()
         Scheduler(self, self.stop).start()
 

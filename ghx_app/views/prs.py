@@ -55,6 +55,7 @@ class Checkout:
 
 class PrsView(ListView):
     label = "PRs"
+    poll_interval = 30.0
 
     def title(self) -> str:
         return "Pull Requests"

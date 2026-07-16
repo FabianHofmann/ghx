@@ -233,11 +233,8 @@ class CommentsView(ListView):
         owner, _, name = self.shared.repo.partition("/")
         return get_unresolved_comments(owner, name, self.shared.pr_number)
 
-    def poll(self) -> None:
-        latest = self.fetch()
-        if {c["thread_id"] for c in latest} != {c["thread_id"] for c in self.items}:
-            self.has_new = True
-            self.shell.invalidate()
+    def changed(self, latest: list[dict]) -> bool:
+        return {c["thread_id"] for c in latest} != {c["thread_id"] for c in self.items}
 
     def apply(self, items: list[dict]) -> None:
         self.selected.clear()
