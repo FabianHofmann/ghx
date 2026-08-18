@@ -43,7 +43,7 @@ def graphql(query: str, **variables: str | int) -> dict[str, Any]:
 
 
 def pr_list_args(mine: bool) -> list[str]:
-    args = ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "50"]
+    args = ["pr", "list", "--json", PR_LIST_FIELDS, "--state", "all", "--limit", "200"]
     if mine:
         args.extend(["--author", "@me"])
     return args

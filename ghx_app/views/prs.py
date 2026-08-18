@@ -30,6 +30,11 @@ REVIEW_COLORS = {
 
 
 def status_text(pr: dict) -> tuple[str, str]:
+    state = pr["state"].lower()
+    if state == "merged":
+        return "item-state", "merged"
+    if state == "closed":
+        return "detail-label", "closed"
     if pr["isDraft"]:
         return "item-draft", "draft"
     review = pr.get("reviewDecision") or "PENDING"
@@ -60,7 +65,7 @@ class PrsView(ListView):
         return "Pull Requests"
 
     def counts(self) -> str:
-        scope = "mine" if self.shared.mine else "open"
+        scope = "mine" if self.shared.mine else "all"
         return f"{len(self.items)} {scope}"
 
     def fetch(self) -> list[dict]:
@@ -95,7 +100,7 @@ class PrsView(ListView):
         )
         lines: StyleText = [("class:col-header", header_line), ("class:col-header-dim", separator_line)]
         if not prs:
-            return lines + self.empty_fragments("No open PRs")
+            return lines + self.empty_fragments("No PRs")
         start, end = self.visible_range()
         for i in range(start, end):
             pr = prs[i]
