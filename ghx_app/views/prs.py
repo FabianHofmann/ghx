@@ -4,7 +4,6 @@ import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 
     from ghx_app.shell import Shell
 
-DETAIL_MIN_ROWS = 14
+DETAIL_SECTION_ROWS = 8
 
 REVIEW_COLORS = {
     "APPROVED": "#a6e22e",
@@ -71,10 +70,10 @@ class PrsView(ListView):
         return [("Enter", "checkout"), ("b", "browse"), ("m", "mine")]
 
     def detail_visible(self) -> bool:
-        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+        return self.fits_section(DETAIL_SECTION_ROWS)
 
     def chrome_rows(self) -> int:
-        return 8 if self.items and self.detail_visible() else 0
+        return DETAIL_SECTION_ROWS if self.items and self.detail_visible() else 0
 
     def list_fragments(self) -> StyleText:
         prs = self.items

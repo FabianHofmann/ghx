@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
 
 LABEL_PANEL_ROWS = 10
+LABEL_PANEL_MIN_ROWS = 3
 
 
 def assignee_of(issue: dict) -> str:
@@ -79,8 +80,11 @@ class IssuesView(ListView):
             return [("j/k", "move"), ("Space", "toggle"), ("c", "clear"), ("Esc", "close")]
         return [("Enter/b", "browse"), ("m", "mine"), ("l", "labels")]
 
+    def label_panel_rows(self) -> int:
+        return max(LABEL_PANEL_MIN_ROWS, min(LABEL_PANEL_ROWS, self.section_capacity(3)))
+
     def chrome_rows(self) -> int:
-        return LABEL_PANEL_ROWS + 3 if self.label_mode else 0
+        return self.label_panel_rows() + 3 if self.label_mode else 0
 
     def label_fragments(self, labels: list[dict], max_width: int, selected: bool) -> StyleText:
         fill = "class:sel-title" if selected else "class:item"
@@ -167,12 +171,13 @@ class IssuesView(ListView):
         labels = self.available_labels()
         if not labels:
             return [("class:item-time", "   (no labels on loaded issues)")]
-        if len(labels) > LABEL_PANEL_ROWS:
-            start = max(0, min(self.label_cursor - LABEL_PANEL_ROWS // 2, len(labels) - LABEL_PANEL_ROWS))
+        rows = self.label_panel_rows()
+        if len(labels) > rows:
+            start = max(0, min(self.label_cursor - rows // 2, len(labels) - rows))
         else:
             start = 0
         lines: StyleText = []
-        for i in range(start, min(start + LABEL_PANEL_ROWS, len(labels))):
+        for i in range(start, min(start + rows, len(labels))):
             name, color, count = labels[i]
             is_sel = i == self.label_cursor
             prefix = " ▶ " if is_sel else "   "
@@ -193,7 +198,7 @@ class IssuesView(ListView):
         section = HSplit([
             Window(char="─", height=1, style="class:border"),
             Window(FormattedTextControl(self.label_panel_header), height=1),
-            Window(FormattedTextControl(self.label_panel_list), height=LABEL_PANEL_ROWS),
+            Window(FormattedTextControl(self.label_panel_list), height=self.label_panel_rows),
             Window(char="─", height=1, style="class:border"),
         ])
         return [ConditionalContainer(section, filter=visible)]

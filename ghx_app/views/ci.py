@@ -4,7 +4,6 @@ import subprocess
 import webbrowser
 from typing import TYPE_CHECKING
 
-from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
@@ -17,7 +16,7 @@ from ghx_app.util import ellipsize, relative_time
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
 
-DETAIL_MIN_ROWS = 14
+DETAIL_SECTION_ROWS = 8
 
 RUNNING_STATES = {"IN_PROGRESS", "PENDING", "QUEUED", "WAITING", "REQUESTED", "EXPECTED"}
 
@@ -115,10 +114,10 @@ class CiView(ListView):
         return [("Enter", "open run")]
 
     def detail_visible(self) -> bool:
-        return get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+        return self.fits_section(DETAIL_SECTION_ROWS)
 
     def chrome_rows(self) -> int:
-        return 8 if self.items and self.detail_visible() else 0
+        return DETAIL_SECTION_ROWS if self.items and self.detail_visible() else 0
 
     def state_style(self, state: str) -> str:
         if state in RUNNING_STATES:

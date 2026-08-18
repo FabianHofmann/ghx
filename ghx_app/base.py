@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 StyleText = list[tuple[str, str]]
 
 SHELL_CHROME_ROWS = 6
+MIN_LIST_ROWS = 10
 
 
 @dataclass
@@ -65,6 +66,14 @@ class ListView(ABC):
 
     def chrome_rows(self) -> int:
         return 0
+
+    def fits_section(self, section_rows: int) -> bool:
+        rows = get_app().output.get_size().rows
+        return rows - SHELL_CHROME_ROWS - section_rows >= MIN_LIST_ROWS
+
+    def section_capacity(self, fixed_rows: int) -> int:
+        rows = get_app().output.get_size().rows
+        return rows - SHELL_CHROME_ROWS - fixed_rows - MIN_LIST_ROWS
 
     def changed(self, latest: list[dict]) -> bool:
         return latest != self.items

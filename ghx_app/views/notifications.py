@@ -4,7 +4,6 @@ import json
 import threading
 from typing import TYPE_CHECKING
 
-from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
@@ -21,7 +20,6 @@ if TYPE_CHECKING:
 DETAIL_META_ROWS = 5
 DETAIL_PREVIEW_ROWS = 5
 DETAIL_SECTION_ROWS = DETAIL_META_ROWS + DETAIL_PREVIEW_ROWS + 3
-DETAIL_MIN_ROWS = 18
 
 TYPE_LABELS = {
     "PullRequest": "PR",
@@ -218,10 +216,10 @@ class NotificationsView(ListView):
         ]
 
     def detail_visible(self) -> bool:
-        return self.detail_expanded and get_app().output.get_size().rows >= DETAIL_MIN_ROWS
+        return self.detail_expanded and self.fits_section(DETAIL_SECTION_ROWS)
 
     def chrome_rows(self) -> int:
-        return (DETAIL_SECTION_ROWS + 2) if self.items and self.detail_visible() else 0
+        return DETAIL_SECTION_ROWS if self.items and self.detail_visible() else 0
 
     def state_cell(self, n: dict, selected_row: bool) -> tuple[str, str]:
         col_state = 8

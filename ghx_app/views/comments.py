@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pyperclip
 from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
@@ -26,8 +25,8 @@ if TYPE_CHECKING:
 
     from ghx_app.shell import Shell
 
-SNIPPET_MIN_ROWS = 28
-COMMENT_MIN_ROWS = 16
+SNIPPET_SECTION_ROWS = 11
+COMMENT_SECTION_ROWS = 11
 
 THREADS_QUERY = """
 query($owner: String!, $repo: String!, $pr: Int!) {
@@ -256,18 +255,18 @@ class CommentsView(ListView):
         ]
 
     def snippet_visible(self) -> bool:
-        return get_app().output.get_size().rows >= SNIPPET_MIN_ROWS
+        return self.fits_section(SNIPPET_SECTION_ROWS + COMMENT_SECTION_ROWS)
 
     def comment_visible(self) -> bool:
-        return get_app().output.get_size().rows >= COMMENT_MIN_ROWS
+        return self.fits_section(COMMENT_SECTION_ROWS)
 
     def chrome_rows(self) -> int:
         if not self.items:
             return 0
         if self.snippet_visible():
-            return 22
+            return SNIPPET_SECTION_ROWS + COMMENT_SECTION_ROWS
         if self.comment_visible():
-            return 11
+            return COMMENT_SECTION_ROWS
         return 0
 
     def list_fragments(self) -> StyleText:
