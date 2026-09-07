@@ -64,6 +64,7 @@ def main() -> int:
         if number is None:
             print("No open PR for this branch", file=sys.stderr)
             return 1
+        print("Opening related GitHub page")
         gh.open_pr_in_browser(number)
         return 0
 
