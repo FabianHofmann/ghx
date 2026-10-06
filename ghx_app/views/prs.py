@@ -12,6 +12,7 @@ from rich.console import Console
 
 from ghx_app.base import ListView, StyleText
 from ghx_app.gh import gh_json, pr_list_args
+from ghx_app.search import SearchableView
 from ghx_app.util import ellipsize
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ class Checkout:
         shell.on_branch_change()
 
 
-class PrsView(ListView):
+class PrsView(SearchableView):
     label = "PRs"
     poll_interval = 30.0
 
@@ -61,19 +62,24 @@ class PrsView(ListView):
 
     def counts(self) -> str:
         scope = "mine" if self.shared.mine else "open"
-        return f"{len(self.items)} {scope}"
+        scope = "found" if self.search_query else scope
+        return f"{len(self.items)} {scope}{self.search_suffix()}"
 
     def fetch(self) -> list[dict]:
-        return gh_json(pr_list_args(self.shared.mine))
+        return gh_json(pr_list_args(self.shared.mine, self.search_query))
+
+    def haystack(self, item: dict) -> str:
+        return f"#{item['number']} {item['title']} {item['headRefName']} {item['author']['login']}"
 
     def hints(self) -> list[tuple[str, str]]:
-        return [("Enter", "checkout"), ("b", "browse"), ("m", "mine")]
+        return super().hints() or [("Enter", "checkout"), ("b", "browse"), ("f", "find"), ("m", "mine")]
 
     def detail_visible(self) -> bool:
         return self.fits_section(DETAIL_SECTION_ROWS)
 
     def chrome_rows(self) -> int:
-        return DETAIL_SECTION_ROWS if self.items and self.detail_visible() else 0
+        detail = DETAIL_SECTION_ROWS if self.items and self.detail_visible() else 0
+        return detail + super().chrome_rows()
 
     def list_fragments(self) -> StyleText:
         prs = self.items
@@ -170,10 +176,10 @@ class PrsView(ListView):
             Window(FormattedTextControl(self.detail_text), height=5),
             Window(char="─", height=1, style="class:border"),
         ])
-        return [ConditionalContainer(section, filter=visible)]
+        return [*super().detail_containers(), ConditionalContainer(section, filter=visible)]
 
-    def bindings(self) -> KeyBindings:
-        kb = super().bindings()
+    def view_bindings(self) -> KeyBindings:
+        kb = ListView.bindings(self)
 
         @kb.add("b")
         def _(event) -> None:

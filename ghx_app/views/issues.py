@@ -7,8 +7,9 @@ from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merg
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 
-from ghx_app.base import ListView, StyleText
+from ghx_app.base import StyleText
 from ghx_app.gh import gh_json, issue_list_args, open_url
+from ghx_app.search import SearchableView
 from ghx_app.util import ellipsize, label_fg, relative_time
 
 if TYPE_CHECKING:
@@ -16,19 +17,20 @@ if TYPE_CHECKING:
 
 LABEL_PANEL_ROWS = 10
 LABEL_PANEL_MIN_ROWS = 3
+LABELS_MIN_WIDTH = 12
+LABELS_MAX_WIDTH = 40
 
 
 def assignee_of(issue: dict) -> str:
     return issue["assignees"][0]["login"] if issue["assignees"] else ""
 
 
-class IssuesView(ListView):
+class IssuesView(SearchableView):
     label = "Issues"
     poll_interval = 30.0
 
     def __init__(self, shared) -> None:
         super().__init__(shared)
-        self.all_items: list[dict] = []
         self.active_labels: set[str] = set()
         self.label_mode = False
         self.label_cursor = 0
@@ -38,34 +40,22 @@ class IssuesView(ListView):
 
     def counts(self) -> str:
         scope = "assigned" if self.shared.mine else "open"
+        scope = "found" if self.search_query else scope
         base = f"{len(self.items)} {scope}"
+        base += self.search_suffix()
         if self.active_labels:
             base += f", filtered: {' + '.join(sorted(self.active_labels))}"
         return base
 
     def fetch(self) -> list[dict]:
-        return gh_json(issue_list_args(self.shared.mine))
+        return gh_json(issue_list_args(self.shared.mine, self.search_query))
 
-    def changed(self, latest: list[dict]) -> bool:
-        return latest != self.all_items
+    def haystack(self, item: dict) -> str:
+        labels = " ".join(l["name"] for l in item["labels"])
+        return f"#{item['number']} {item['title']} {item['author']['login']} {labels}"
 
-    def apply(self, items: list[dict]) -> None:
-        self.all_items = items
-        self.apply_filter()
-        self.shell.invalidate()
-
-    def seed(self, items: list[dict]) -> None:
-        super().seed(items)
-        self.all_items = items
-        self.apply_filter()
-
-    def apply_filter(self) -> None:
-        if self.active_labels:
-            self.items = [it for it in self.all_items if self.active_labels <= {l["name"] for l in it["labels"]}]
-        else:
-            self.items = list(self.all_items)
-        self.cursor = min(self.cursor, max(0, len(self.items) - 1))
-        self.adjust_scroll()
+    def keep(self, item: dict) -> bool:
+        return self.active_labels <= {l["name"] for l in item["labels"]}
 
     def available_labels(self) -> list[tuple[str, str, int]]:
         seen: dict[str, list] = {}
@@ -76,15 +66,18 @@ class IssuesView(ListView):
         return sorted(((name, color, count) for name, (color, count) in seen.items()), key=lambda x: x[0])
 
     def hints(self) -> list[tuple[str, str]]:
+        if self.search_mode:
+            return super().hints()
         if self.label_mode:
             return [("j/k", "move"), ("Space", "toggle"), ("c", "clear"), ("Esc", "close")]
-        return [("Enter/b", "browse"), ("m", "mine"), ("l", "labels")]
+        return [("Enter/b", "browse"), ("f", "find"), ("m", "mine"), ("l", "labels")]
 
     def label_panel_rows(self) -> int:
         return max(LABEL_PANEL_MIN_ROWS, min(LABEL_PANEL_ROWS, self.section_capacity(3)))
 
     def chrome_rows(self) -> int:
-        return self.label_panel_rows() + 3 if self.label_mode else 0
+        labels = self.label_panel_rows() + 3 if self.label_mode else 0
+        return labels + super().chrome_rows()
 
     def label_fragments(self, labels: list[dict], max_width: int, selected: bool) -> StyleText:
         fill = "class:sel-title" if selected else "class:item"
@@ -92,12 +85,15 @@ class IssuesView(ListView):
         used = 0
         for l in labels:
             chip = f" {l['name']} "
-            if used + len(chip) + 1 > max_width:
+            room = max_width - used - 1
+            if len(chip) > room and room < 4:
                 out.append(("class:item-time", "…"))
                 break
             color = l["color"] or "88846f"
-            out.append((f"fg:{label_fg(color)} bg:#{color}", chip))
+            out.append((f"fg:{label_fg(color)} bg:#{color}", f" {ellipsize(l['name'], room - 2)} "))
             out.append((fill, " "))
+            if len(chip) > room:
+                break
             used += len(chip) + 1
         return out
 
@@ -107,10 +103,12 @@ class IssuesView(ListView):
         col_num = 6
         col_assignee = min(16, max(6, max((len(assignee_of(it)) for it in issues), default=6)))
         col_when = 8
-        labels_min = 12
+        start, end = self.visible_range()
+        labels_need = max((sum(len(l["name"]) + 3 for l in it["labels"]) for it in issues[start:end]), default=0)
+        labels_target = max(LABELS_MIN_WIDTH, min(LABELS_MAX_WIDTH, labels_need))
         fixed = 3 + col_num + 1 + 3 + (1 + col_assignee) + 3 + col_when + 3
-        col_title = max(18, min(52, width - fixed - labels_min))
-        labels_width = max(labels_min, width - fixed - col_title - 1)
+        col_title = max(32, min(52, width - fixed - labels_target))
+        labels_width = max(LABELS_MIN_WIDTH, width - fixed - col_title - 1)
 
         header_line = (
             f"{'':<3}{'#':<{col_num}} {'Title':<{col_title}}   "
@@ -123,7 +121,6 @@ class IssuesView(ListView):
         lines: StyleText = [("class:col-header", header_line), ("class:col-header-dim", separator_line)]
         if not issues:
             return lines + self.empty_fragments("No open issues")
-        start, end = self.visible_range()
         for i in range(start, end):
             it = issues[i]
             is_sel = i == self.cursor
@@ -201,7 +198,11 @@ class IssuesView(ListView):
             Window(FormattedTextControl(self.label_panel_list), height=self.label_panel_rows),
             Window(char="─", height=1, style="class:border"),
         ])
-        return [ConditionalContainer(section, filter=visible)]
+        return [*super().detail_containers(), ConditionalContainer(section, filter=visible)]
+
+    def start_search(self, event) -> None:
+        self.label_mode = False
+        super().start_search(event)
 
     def label_move(self, delta: int) -> None:
         total = len(self.available_labels())
@@ -218,7 +219,7 @@ class IssuesView(ListView):
             self.active_labels.add(name)
         self.apply_filter()
 
-    def bindings(self) -> KeyBindings:
+    def view_bindings(self) -> KeyBindings:
         normal = KeyBindings()
 
         @normal.add("up")

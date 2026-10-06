@@ -18,6 +18,8 @@ from ghx_app.gh import current_branch, get_pr_number, open_pr_in_browser
 from ghx_app.statusbar import StatusBar
 from ghx_app.theme import MONOKAI_STYLE
 
+ESCAPE_TIMEOUT = 0.05
+
 ANSI_SEQUENCES["\x1b[I"] = Keys.F23
 ANSI_SEQUENCES["\x1b[O"] = Keys.F24
 
@@ -119,7 +121,8 @@ class Shell:
             middle.append(("class:footer", f" {self.message}"))
         def hint_fragments(separator: str, with_labels: bool) -> StyleText:
             fragments: StyleText = []
-            for key, label in [*self.active_view.hints(), ("q", "quit")]:
+            quit_hint = [] if self.active_view.capturing_input() else [("q", "quit")]
+            for key, label in [*self.active_view.hints(), *quit_hint]:
                 if fragments:
                     fragments.append(("class:footer-dim", separator))
                 fragments.append(("class:footer-key", key))
@@ -184,6 +187,7 @@ class Shell:
             FormattedTextControl(lambda: self.active_view.list_fragments(), show_cursor=False, focusable=True),
             height=Dimension(min=1, weight=1),
         )
+        self.list_window = list_window
         details = [container for view in self.views for container in view.detail_containers()]
         status = Window(FormattedTextControl(self.statusbar.fragments), height=1)
         footer = Window(FormattedTextControl(self.footer_fragments), height=1)
@@ -193,8 +197,13 @@ class Shell:
             ConditionalKeyBindings(view.bindings(), Condition(lambda view=view: self.active_view is view))
             for view in self.views
         ]
-        bindings = merge_key_bindings([self.global_bindings(), *view_bindings])
-        return Application(layout=layout, key_bindings=bindings, style=MONOKAI_STYLE, full_screen=True)
+        global_bindings = ConditionalKeyBindings(
+            self.global_bindings(), Condition(lambda: not self.active_view.capturing_input())
+        )
+        bindings = merge_key_bindings([global_bindings, *view_bindings])
+        app = Application(layout=layout, key_bindings=bindings, style=MONOKAI_STYLE, full_screen=True)
+        app.ttimeoutlen = ESCAPE_TIMEOUT
+        return app
 
     def run(self) -> Any:
         self.stop = threading.Event()

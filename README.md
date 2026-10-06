@@ -23,11 +23,11 @@ Outside a git repository only `ghx notifs` works (notifications across all repos
 
 ## Views
 
-Switch views with `1`–`4` or `Tab`/`Shift-Tab`. Global keys everywhere:
+Switch views with `1`–`5` or `Tab`/`Shift-Tab`. Global keys everywhere:
 
 | Key | Action |
 |---|---|
-| `1`–`4`, `Tab` | Switch view |
+| `1`–`5`, `Tab` | Switch view |
 | `j/k`, `↑/↓` | Navigate |
 | `r` | Refresh active view |
 | `o` | Open current branch's PR in browser |
@@ -41,9 +41,21 @@ Open PRs with branch, author, and review status (draft/approved/changes/review/p
 |---|---|
 | `Enter` | Checkout PR |
 | `b` | Open in browser |
+| `f` | Find: filter loaded PRs live by number, title, branch or author; `Enter` searches GitHub; `Esc` clears |
 | `m` | Toggle "only my PRs" filter |
 
-### 2 · CI
+### 2 · Issues
+
+Open issues (latest 50) with assignee and colored label chips.
+
+| Key | Action |
+|---|---|
+| `Enter`, `b` | Open in browser |
+| `f` | Find: filter loaded issues live by number, title, author or label; `Enter` searches GitHub (all issues, whole words, [search syntax](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests)); `Esc` clears |
+| `l` | Label filter panel |
+| `m` | Toggle "assigned to me" filter |
+
+### 3 · CI
 
 CI check statuses for the current branch's PR. Background polling (15s) flags updates with `● new`; `r` applies them.
 
@@ -51,7 +63,7 @@ CI check statuses for the current branch's PR. Background polling (15s) flags up
 |---|---|
 | `Enter` | Open check URL |
 
-### 3 · Comments
+### 4 · Comments
 
 Unresolved PR review threads with syntax-highlighted code preview and full thread bodies. Background polling (30s).
 
@@ -64,7 +76,7 @@ Unresolved PR review threads with syntax-highlighted code preview and full threa
 | `c` | Copy Claude-formatted prompt to clipboard |
 | `d` | Resolve thread(s) |
 
-### 4 · Notifs
+### 5 · Notifs
 
 Unread GitHub notifications, auto-scoped to the current repo (all repos when outside one). Auto-refreshes every 30s; PR/issue open/closed state and body previews load lazily in the background.
 
@@ -106,8 +118,9 @@ chmod +x /path/to/ghx/ghx.py
 - `gh.py` — gh CLI / GraphQL helpers, branch-context query
 - `util.py` — text helpers (`ellipsize`, `relative_time`)
 - `base.py` — `Shared` state and the `ListView` base class (cursor/scroll, lazy loading, nav keys)
+- `search.py` — `SearchableView`: `f` search bar with live local filter and GitHub search (PRs, Issues)
 - `shell.py` — app shell: layout, view switching, global keys, footer, poll scheduler
 - `statusbar.py` — branch-context status bar
-- `views/` — the four views
+- `views/` — the five views
 
 Actions that must leave the TUI (checkout, inline reply) exit the app with a pending action; a rerun loop in `ghx.py` executes it and re-enters with view state intact. The terminal focus in/out state is reflected by the bottom accent bar.

@@ -92,6 +92,9 @@ class ListView(ABC):
     def on_branch_change(self) -> None:
         pass
 
+    def capturing_input(self) -> bool:
+        return False
+
     def is_active(self) -> bool:
         return self.shell.active_view is self
 

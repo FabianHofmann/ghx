@@ -42,17 +42,21 @@ def graphql(query: str, **variables: str | int) -> dict[str, Any]:
     return gh_json(cmd).get("data") or {}
 
 
-def pr_list_args(mine: bool) -> list[str]:
+def pr_list_args(mine: bool, search: str = "") -> list[str]:
     args = ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "50"]
     if mine:
         args.extend(["--author", "@me"])
+    if search:
+        args.extend(["--search", search])
     return args
 
 
-def issue_list_args(mine: bool) -> list[str]:
+def issue_list_args(mine: bool, search: str = "") -> list[str]:
     args = ["issue", "list", "--json", ISSUE_LIST_FIELDS, "--limit", "50"]
     if mine:
         args.extend(["--assignee", "@me"])
+    if search:
+        args.extend(["--search", search])
     return args
 
 
