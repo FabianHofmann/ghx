@@ -15,9 +15,6 @@ from ghx_app import gh
 
 VIEW_NAMES = ["prs", "issues", "ci", "comments", "notifs"]
 
-STATIC_STATE_COLOR = {"open": "#a6e22e", "closed": "#f92672", "merged": "#ae81ff", "draft": "#88846f"}
-
-
 def resolve_view(name: str) -> str:
     matches = [v for v in VIEW_NAMES if v.startswith(name)]
     if len(matches) != 1:
@@ -27,19 +24,22 @@ def resolve_view(name: str) -> str:
 
 def print_static(branch: str, repo: str | None, context: dict | None) -> None:
     from rich.console import Console
+
+    from ghx_app.theme import C
+    state_color = {"open": C["green"], "closed": C["red"], "merged": C["purple"], "draft": C["muted"]}
     console = Console()
-    console.print(f"[bold #66d9ef]{branch}[/] [#75715e]·[/] [#75715e]{repo or '(no repo)'}[/]")
+    console.print(f"[bold {C['cyan']}]{branch}[/] [{C['dim']}]·[/] [{C['dim']}]{repo or '(no repo)'}[/]")
     if context is None:
-        console.print("[#75715e]No open PR for this branch[/]")
+        console.print(f"[{C['dim']}]No open PR for this branch[/]")
         return
     pr = context["pr"]
-    pr_state = f"[{STATIC_STATE_COLOR[pr['state']]}]{pr['state']}[/]"
-    console.print(f"[#ae81ff]PR #{pr['number']}[/] {pr_state} {pr['title']}")
+    pr_state = f"[{state_color[pr['state']]}]{pr['state']}[/]"
+    console.print(f"[{C['purple']}]PR #{pr['number']}[/] {pr_state} {pr['title']}")
     if not context["issues"]:
-        console.print("[#75715e]No linked issues[/]")
+        console.print(f"[{C['dim']}]No linked issues[/]")
     for issue in context["issues"]:
-        issue_state = f"[{STATIC_STATE_COLOR[issue['state']]}]{issue['state']}[/]"
-        console.print(f"  [#fd971f]#{issue['number']}[/] {issue_state} {issue['title']}")
+        issue_state = f"[{state_color[issue['state']]}]{issue['state']}[/]"
+        console.print(f"  [{C['orange']}]#{issue['number']}[/] {issue_state} {issue['title']}")
 
 
 def popen(args: list[str]) -> subprocess.Popen[str]:

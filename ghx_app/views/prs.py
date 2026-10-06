@@ -13,6 +13,7 @@ from rich.console import Console
 from ghx_app.base import ListView, StyleText
 from ghx_app.gh import gh_json, pr_list_args
 from ghx_app.search import SearchableView
+from ghx_app.theme import C
 from ghx_app.util import ellipsize
 
 if TYPE_CHECKING:
@@ -21,14 +22,6 @@ if TYPE_CHECKING:
     from ghx_app.shell import Shell
 
 DETAIL_SECTION_ROWS = 8
-
-REVIEW_COLORS = {
-    "APPROVED": "#a6e22e",
-    "CHANGES_REQUESTED": "#f92672",
-    "REVIEW_REQUIRED": "#e5da74",
-    "PENDING": "#88846f",
-}
-
 
 def status_text(pr: dict) -> tuple[str, str]:
     if pr["isDraft"]:
@@ -48,7 +41,7 @@ class Checkout:
     number: int
 
     def run(self, shell: Shell) -> None:
-        Console().print(f"\n[bold #a6e22e]Checking out PR #{self.number}...[/]")
+        Console().print(f"\n[bold {C['green']}]Checking out PR #{self.number}...[/]")
         subprocess.run(["gh", "pr", "checkout", str(self.number)])
         shell.on_branch_change()
 
@@ -154,16 +147,16 @@ class PrsView(SearchableView):
             ("class:item-author", f"@{pr['author']['login']}"),
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Status: "),
-            (REVIEW_COLORS.get(review, "#f8f8f2"), review.replace("_", " ").title()),
+            (f"class:review-{review.lower()}", review.replace("_", " ").title()),
         ]
         if pr["isDraft"]:
             lines.append(("class:item-draft", " (draft)"))
         lines.extend([
             ("class:detail-value", "\n"),
             ("class:detail-label", "  Changes: "),
-            ("#a6e22e", f"+{pr['additions']}"),
+            ("class:additions", f"+{pr['additions']}"),
             ("class:detail-value", " / "),
-            ("#f92672", f"-{pr['deletions']}"),
+            ("class:deletions", f"-{pr['deletions']}"),
             ("class:detail-value", "\n"),
         ])
         return lines

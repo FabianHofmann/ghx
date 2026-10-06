@@ -16,7 +16,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from ghx_app.base import ListView, Shared, StyleText
 from ghx_app.gh import current_branch, get_pr_number, open_pr_in_browser
 from ghx_app.statusbar import StatusBar
-from ghx_app.theme import MONOKAI_STYLE
+from ghx_app.theme import STYLE
 
 ESCAPE_TIMEOUT = 0.05
 
@@ -201,7 +201,7 @@ class Shell:
             self.global_bindings(), Condition(lambda: not self.active_view.capturing_input())
         )
         bindings = merge_key_bindings([global_bindings, *view_bindings])
-        app = Application(layout=layout, key_bindings=bindings, style=MONOKAI_STYLE, full_screen=True)
+        app = Application(layout=layout, key_bindings=bindings, style=STYLE, full_screen=True)
         app.ttimeoutlen = ESCAPE_TIMEOUT
         return app
 

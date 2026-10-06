@@ -17,7 +17,7 @@ from rich.console import Console
 
 from ghx_app.base import ListView, StyleText
 from ghx_app.gh import graphql, open_url, run_gh
-from ghx_app.theme import TOKEN_COLORS
+from ghx_app.theme import C, TOKEN_COLORS
 from ghx_app.util import ellipsize
 
 if TYPE_CHECKING:
@@ -114,12 +114,12 @@ def get_token_color(token_type) -> str:
         if token_type in TOKEN_COLORS:
             return TOKEN_COLORS[token_type]
         token_type = token_type.parent
-    return "#f8f8f2"
+    return C["fg"]
 
 
 def highlight_line(line: str, lexer, is_highlighted: bool) -> StyleText:
     result = []
-    bg = " bg:#49483e" if is_highlighted else ""
+    bg = f" bg:{C['hl']}" if is_highlighted else ""
     for token_type, token_value in lex(line.rstrip("\n\r"), lexer):
         token_value = token_value.rstrip("\n\r")
         if not token_value:
@@ -151,7 +151,7 @@ def get_code_snippet(file_path: str, target_line: int | None, context: int = 3) 
         is_target = line_num == target_line
         if is_target:
             result.append(("class:snippet-highlight-num", f"{line_num:4d} "))
-            result.append(("#f8f8f2 bg:#49483e", "│ "))
+            result.append(("class:snippet-highlight", "│ "))
         else:
             result.append(("class:snippet-num", f"{line_num:4d} "))
             result.append(("class:snippet", "│ "))
@@ -196,8 +196,8 @@ class Reply:
     def run(self, shell: Shell) -> None:
         comment = self.view.items[self.index]
         console = Console()
-        console.print(f"\n[bold #e5da74]Replying to @{comment['author']}[/] on [#66d9ef]{comment['path']}:{comment['line']}[/]")
-        console.print(f"[#88846f]{comment['body'][:200]}[/]\n")
+        console.print(f"\n[bold {C['yellow']}]Replying to @{comment['author']}[/] on [{C['cyan']}]{comment['path']}:{comment['line']}[/]")
+        console.print(f"[{C['muted']}]{comment['body'][:200]}[/]\n")
         try:
             body = pt_prompt("Reply: ")
         except (EOFError, KeyboardInterrupt):
@@ -205,10 +205,10 @@ class Reply:
         if not body.strip():
             return
         if reply_to_thread(comment["thread_id"], body):
-            console.print("[bold #a6e22e]Reply sent[/]\n")
+            console.print(f"[bold {C['green']}]Reply sent[/]\n")
             comment["replies"].append({"body": body, "author": "you"})
         else:
-            console.print("[bold #f92672]Failed to send reply[/]\n")
+            console.print(f"[bold {C['red']}]Failed to send reply[/]\n")
 
 
 class CommentsView(ListView):

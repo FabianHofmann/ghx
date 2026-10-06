@@ -19,7 +19,7 @@ A combined GitHub TUI (`ghx.py`) built on prompt_toolkit, run standalone via `uv
 - `ghx_app/shell.py` — layout (header / list / per-view detail panes / status bar / footer / focus accent bar), view switching (`1`–`5`, tab), global keys (`o` open PR, `q` quit), `Scheduler` thread polling the status bar (30s) and the active view (per-view `poll_interval`); terminal focus in/out reporting via F23/F24 pseudo-keys.
 - `ghx_app/statusbar.py` — branch/repo/PR/linked-issues line, updates `Shared.pr_number` on poll.
 - `ghx_app/views/` — one module per view; each implements `fetch`, `list_fragments`, `title`, `counts`, `hints`, and optionally `detail_containers`, `poll`, `bindings`, `chrome_rows`, `on_branch_change`.
-- `ghx_app/theme.py` / `gh.py` / `util.py` — merged Monokai style dict, gh CLI/GraphQL helpers, text helpers.
+- `ghx_app/theme.py` / `gh.py` / `util.py` — Monokai dark/light palettes (`C`, picked at import by querying the terminal background via OSC 11, override with `GHX_THEME=light|dark`) and the style built from it, gh CLI/GraphQL helpers, text helpers.
 
 **External dependencies**: `gh` CLI for all GitHub interactions, `zed` for opening files, `xdg-open` for URLs.
 
