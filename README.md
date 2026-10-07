@@ -50,7 +50,7 @@ Open issues (latest 50) with assignee and colored label chips.
 
 | Key | Action |
 |---|---|
-| `Enter`, `b` | Open in browser |
+| `Enter` | Open in browser |
 | `f` | Find: filter loaded issues live by number, title, author or label; `Enter` searches GitHub (all issues, whole words, [search syntax](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests)); `Esc` clears |
 | `l` | Label filter panel |
 | `m` | Toggle "assigned to me" filter |
@@ -82,7 +82,7 @@ Unread GitHub notifications, auto-scoped to the current repo (all repos when out
 
 | Key | Action |
 |---|---|
-| `Enter`, `b` | Open in browser |
+| `Enter` | Open in browser |
 | `d` | Mark done |
 | `Space` | Toggle detail pane |
 

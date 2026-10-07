@@ -70,7 +70,7 @@ class IssuesView(SearchableView):
             return super().hints()
         if self.label_mode:
             return [("j/k", "move"), ("Space", "toggle"), ("c", "clear"), ("Esc", "close")]
-        return [("Enter/b", "browse"), ("f", "find"), ("m", "mine"), ("l", "labels")]
+        return [("Enter", "browse"), ("f", "find"), ("m", "mine"), ("l", "labels")]
 
     def label_panel_rows(self) -> int:
         return max(LABEL_PANEL_MIN_ROWS, min(LABEL_PANEL_ROWS, self.section_capacity(3)))
@@ -233,7 +233,6 @@ class IssuesView(SearchableView):
             self.move(1)
 
         @normal.add("enter")
-        @normal.add("b")
         def _(event) -> None:
             if self.items:
                 open_url(self.items[self.cursor]["url"])

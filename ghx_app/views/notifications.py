@@ -211,7 +211,7 @@ class NotificationsView(ListView):
 
     def hints(self) -> list[tuple[str, str]]:
         return [
-            ("Enter/b", "browse"), ("d", "done"),
+            ("Enter", "browse"), ("d", "done"),
             ("Space", "hide" if self.detail_expanded else "details"),
         ]
 
@@ -364,7 +364,6 @@ class NotificationsView(ListView):
         kb = super().bindings()
 
         @kb.add("enter")
-        @kb.add("b")
         def _(event) -> None:
             if not self.items:
                 return
