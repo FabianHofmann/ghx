@@ -2,8 +2,9 @@ import json
 import subprocess
 from typing import Any
 
-PR_LIST_FIELDS = "number,title,headRefName,author,isDraft,state,reviewDecision,additions,deletions"
+PR_LIST_FIELDS = "number,title,headRefName,author,isDraft,state,reviewDecision,additions,deletions,labels,url"
 ISSUE_LIST_FIELDS = "number,title,author,state,labels,assignees,updatedAt,url"
+LIST_LIMIT = 50
 
 CONTEXT_QUERY = """
 query($owner: String!, $name: String!, $pr: Int!) {
@@ -30,6 +31,7 @@ query($owner: String!, $name: String!) {
       nodes {
         number title headRefName isDraft reviewDecision additions deletions url
         author { login }
+        labels(first: 20) { nodes { name color } }
         closingIssuesReferences(first: 10) { nodes { number } }
       }
     }
@@ -52,11 +54,19 @@ def run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["gh", *args], capture_output=True, text=True)
 
 
+def popen_gh(args: list[str]) -> subprocess.Popen[str]:
+    return subprocess.Popen(["gh", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def read_json(proc: subprocess.Popen[str]) -> Any:
+    out, err = proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(err.strip() or "gh failed")
+    return json.loads(out)
+
+
 def gh_json(args: list[str]) -> Any:
-    result = run_gh(args)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "gh failed")
-    return json.loads(result.stdout)
+    return read_json(popen_gh(args))
 
 
 def graphql(query: str, **variables: str | int) -> dict[str, Any]:
@@ -68,7 +78,7 @@ def graphql(query: str, **variables: str | int) -> dict[str, Any]:
 
 
 def pr_list_args(mine: bool, search: str = "") -> list[str]:
-    args = ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "50"]
+    args = ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", str(LIST_LIMIT)]
     if mine:
         args.extend(["--author", "@me"])
     if search:
@@ -77,12 +87,19 @@ def pr_list_args(mine: bool, search: str = "") -> list[str]:
 
 
 def issue_list_args(mine: bool, search: str = "") -> list[str]:
-    args = ["issue", "list", "--json", ISSUE_LIST_FIELDS, "--limit", "50"]
+    args = ["issue", "list", "--json", ISSUE_LIST_FIELDS, "--limit", str(LIST_LIMIT)]
     if mine:
         args.extend(["--assignee", "@me"])
     if search:
         args.extend(["--search", search])
     return args
+
+
+def merge_items(prs: list[dict], issues: list[dict], limit: int = LIST_LIMIT) -> list[dict]:
+    lists = [[{**item, "kind": kind} for item in items] for kind, items in (("pr", prs), ("issue", issues))]
+    floor = max((min(item["number"] for item in items) for items in lists if len(items) >= limit), default=0)
+    merged = [item for items in lists for item in items if item["number"] >= floor]
+    return sorted(merged, key=lambda item: item["number"], reverse=True)
 
 
 def detect_repo() -> str | None:
@@ -161,6 +178,7 @@ def fetch_work(repo: str) -> tuple[str, list[dict], list[dict]]:
             "additions": node["additions"],
             "deletions": node["deletions"],
             "url": node["url"],
+            "labels": labels_of(node),
             "closes": [issue["number"] for issue in node["closingIssuesReferences"]["nodes"]],
         }
         for node in repository["pullRequests"]["nodes"]

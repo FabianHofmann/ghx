@@ -11,6 +11,7 @@ from ghx_app.base import StyleText
 from ghx_app.gh import gh_json, issue_list_args, open_url
 from ghx_app.search import SearchableView
 from ghx_app.util import ellipsize, label_fg, label_fragments, relative_time
+from ghx_app.views.items import assignee_of, issue_haystack
 
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
@@ -19,15 +20,6 @@ LABEL_PANEL_ROWS = 10
 LABEL_PANEL_MIN_ROWS = 3
 LABELS_MIN_WIDTH = 12
 LABELS_MAX_WIDTH = 40
-
-
-def assignee_of(issue: dict) -> str:
-    return issue["assignees"][0]["login"] if issue["assignees"] else ""
-
-
-def issue_haystack(issue: dict) -> str:
-    labels = " ".join(l["name"] for l in issue["labels"])
-    return f"#{issue['number']} {issue['title']} {issue['author']['login']} {labels}"
 
 
 class IssuesView(SearchableView):

@@ -13,7 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ghx_app import gh
 
-VIEW_NAMES = ["prs", "issues", "ci", "comments", "notifs", "work"]
+VIEW_NAMES = ["all", "prs", "issues", "work", "ci", "comments", "notifs"]
+LIST_ARGS = {"prs": gh.pr_list_args, "issues": gh.issue_list_args}
+PREFETCH = {"all": ("prs", "issues"), "prs": ("prs",), "issues": ("issues",)}
 
 def resolve_view(name: str) -> str:
     matches = [v for v in VIEW_NAMES if v.startswith(name)]
@@ -42,18 +44,14 @@ def print_static(branch: str, repo: str | None, context: dict | None) -> None:
         console.print(f"  [{C['orange']}]#{issue['number']}[/] {issue_state} {issue['title']}")
 
 
-def popen(args: list[str]) -> subprocess.Popen[str]:
-    return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-
 def read_output(proc: subprocess.Popen[str]) -> str:
     out, _ = proc.communicate()
     return out.strip() if proc.returncode == 0 else ""
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs, issues, CI, review comments, notifications, work tree")
-    parser.add_argument("view", nargs="?", default="prs", help=f"initial view: {', '.join(VIEW_NAMES)} (prefix ok)")
+    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs and issues, work tree, CI, review comments, notifications")
+    parser.add_argument("view", nargs="?", default="all", help=f"initial view: {', '.join(VIEW_NAMES)} (prefix ok)")
     parser.add_argument("-m", "--mine", action="store_true", help="show only PRs authored by me / issues assigned to me")
     parser.add_argument("-o", "--open", action="store_true", help="open the current branch's PR in the browser and exit")
     args = parser.parse_args()
@@ -76,13 +74,10 @@ def main() -> int:
         return 0
 
     prefetch = {
-        "repo": popen(["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]),
-        "pr": popen(["gh", "pr", "view", "--json", "number", "-q", ".number"]),
+        "repo": gh.popen_gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]),
+        "pr": gh.popen_gh(["pr", "view", "--json", "number", "-q", ".number"]),
     }
-    if view_name == "prs":
-        prefetch["prs"] = popen(["gh", *gh.pr_list_args(args.mine)])
-    elif view_name == "issues":
-        prefetch["issues"] = popen(["gh", *gh.issue_list_args(args.mine)])
+    lists = {name: gh.popen_gh(LIST_ARGS[name](args.mine)) for name in PREFETCH.get(view_name, ())}
 
     from ghx_app.base import Shared
     from ghx_app.shell import Shell
@@ -100,11 +95,11 @@ def main() -> int:
 
     shared = Shared(repo=repo, branch=branch, pr_number=pr_number, mine=args.mine)
     views = build_views(shared)
-    for name in ("prs", "issues"):
-        if name in prefetch:
-            out, _ = prefetch[name].communicate()
-            if prefetch[name].returncode == 0:
-                views[VIEW_NAMES.index(name)].seed(json.loads(out))
+    seeds = {name: json.loads(out) for name, proc in lists.items() if (out := read_output(proc))}
+    if {"prs", "issues"} <= seeds.keys():
+        seeds["all"] = gh.merge_items(seeds["prs"], seeds["issues"])
+    for name, items in seeds.items():
+        views[VIEW_NAMES.index(name)].seed(items)
 
     shell = Shell(shared, views, StatusBar(shared), VIEW_NAMES.index(view_name))
     while True:

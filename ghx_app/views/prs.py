@@ -1,69 +1,20 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
-from rich.console import Console
+from prompt_toolkit.layout import ConditionalContainer
 
 from ghx_app.base import ListView, StyleText
 from ghx_app.gh import gh_json, pr_list_args
 from ghx_app.search import SearchableView
-from ghx_app.theme import C
 from ghx_app.util import ellipsize, status_text
+from ghx_app.views.items import DETAIL_SECTION_ROWS, Checkout, detail_section, item_header, pr_detail_text, pr_haystack
 
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
-
-    from ghx_app.shell import Shell
-
-DETAIL_SECTION_ROWS = 8
-
-def pr_haystack(pr: dict) -> str:
-    return f"#{pr['number']} {pr['title']} {pr['headRefName']} {pr['author']['login']}"
-
-
-def item_header(item: dict) -> StyleText:
-    return [("class:header", f"  #{item['number']}: {item['title']}\n")]
-
-
-def pr_detail_text(pr: dict) -> StyleText:
-    review = pr.get("reviewDecision") or "PENDING"
-    lines: StyleText = [
-        ("class:detail-label", "  Branch: "),
-        ("class:item-branch", pr["headRefName"]),
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Author: "),
-        ("class:item-author", f"@{pr['author']['login']}"),
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Status: "),
-        (f"class:review-{review.lower()}", review.replace("_", " ").title()),
-    ]
-    if pr["isDraft"]:
-        lines.append(("class:item-draft", " (draft)"))
-    lines.extend([
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Changes: "),
-        ("class:additions", f"+{pr['additions']}"),
-        ("class:detail-value", " / "),
-        ("class:deletions", f"-{pr['deletions']}"),
-        ("class:detail-value", "\n"),
-    ])
-    return lines
-
-
-@dataclass
-class Checkout:
-    number: int
-
-    def run(self, shell: Shell) -> None:
-        Console().print(f"\n[bold {C['green']}]Checking out PR #{self.number}...[/]")
-        subprocess.run(["gh", "pr", "checkout", str(self.number)])
-        shell.on_branch_change()
 
 
 class PrsView(SearchableView):
@@ -154,12 +105,7 @@ class PrsView(SearchableView):
 
     def detail_containers(self) -> list[AnyContainer]:
         visible = Condition(lambda: self.is_active() and bool(self.items) and self.detail_visible())
-        section = HSplit([
-            Window(char="─", height=1, style="class:border"),
-            Window(FormattedTextControl(lambda: item_header(self.items[self.cursor])), height=1),
-            Window(FormattedTextControl(lambda: pr_detail_text(self.items[self.cursor])), height=5),
-            Window(char="─", height=1, style="class:border"),
-        ])
+        section = detail_section(lambda: item_header(self.items[self.cursor]), lambda: pr_detail_text(self.items[self.cursor]))
         return [*super().detail_containers(), ConditionalContainer(section, filter=visible)]
 
     def view_bindings(self) -> KeyBindings:

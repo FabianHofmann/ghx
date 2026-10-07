@@ -4,15 +4,15 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import ConditionalContainer, HSplit, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout import ConditionalContainer
 
 from ghx_app.base import ListView, Shared, StyleText
 from ghx_app.gh import fetch_work, open_url
 from ghx_app.search import SearchableView
-from ghx_app.util import ellipsize, label_fragments, relative_time, status_text
-from ghx_app.views.issues import assignee_of, issue_haystack
-from ghx_app.views.prs import DETAIL_SECTION_ROWS, Checkout, item_header, pr_detail_text, pr_haystack
+from ghx_app.util import ellipsize, label_fragments, status_text
+from ghx_app.views.items import (
+    DETAIL_SECTION_ROWS, Checkout, assignee_of, detail_section, item_detail_text, item_haystack, item_header,
+)
 
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
@@ -42,24 +42,6 @@ def who(item: dict) -> str:
     return item["author"]["login"] if item["kind"] == "pr" else assignee_of(item)
 
 
-def issue_detail_text(issue: dict) -> StyleText:
-    assignees = ", ".join(f"@{a['login']}" for a in issue["assignees"]) or "—"
-    return [
-        ("class:detail-label", "  Author: "),
-        ("class:item-author", f"@{issue['author']['login']}"),
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Assignees: "),
-        ("class:item-author", assignees),
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Updated: "),
-        ("class:item-time", f"{relative_time(issue['updatedAt'])} ago"),
-        ("class:detail-value", "\n"),
-        ("class:detail-label", "  Labels: "),
-        *label_fragments(issue["labels"], COL_META, False),
-        ("class:detail-value", "\n"),
-    ]
-
-
 class WorkView(SearchableView):
     label = "Work"
     poll_interval = 30.0
@@ -84,7 +66,7 @@ class WorkView(SearchableView):
         return build_trees(prs, issues)
 
     def haystack(self, item: dict) -> str:
-        return pr_haystack(item) if item["kind"] == "pr" else issue_haystack(item)
+        return item_haystack(item)
 
     def keep(self, item: dict) -> bool:
         if not self.shared.mine:
@@ -214,16 +196,11 @@ class WorkView(SearchableView):
         row = self.selected()
         if row["kind"] == "header":
             return [("class:item-time", "  Space folds/unfolds this group\n")]
-        return pr_detail_text(row) if row["kind"] == "pr" else issue_detail_text(row)
+        return item_detail_text(row)
 
     def detail_containers(self) -> list[AnyContainer]:
         visible = Condition(lambda: self.is_active() and bool(self.items) and self.detail_visible())
-        section = HSplit([
-            Window(char="─", height=1, style="class:border"),
-            Window(FormattedTextControl(self.detail_header), height=1),
-            Window(FormattedTextControl(self.detail_text), height=5),
-            Window(char="─", height=1, style="class:border"),
-        ])
+        section = detail_section(self.detail_header, self.detail_text)
         return [*super().detail_containers(), ConditionalContainer(section, filter=visible)]
 
     def view_bindings(self) -> KeyBindings:
