@@ -170,4 +170,4 @@ chmod +x /path/to/ghx/ghx.py
 - `statusbar.py` — branch-context status bar
 - `views/` — the seven views, plus `items.py` with shared PR/issue row helpers
 
-Actions that must leave the TUI (checkout, inline reply) exit the app with a pending action; a rerun loop in `ghx.py` executes it and re-enters with view state intact. The terminal focus in/out state is reflected by the bottom accent bar.
+Actions that must leave the TUI (checkout, inline reply) exit the app with a pending action; a rerun loop in `ghx.py` executes it and re-enters with view state intact. A failed checkout is reported in the footer with the cause (branch checked out in another worktree, whose path is copied to the clipboard; uncommitted changes; diverged local branch; otherwise the last git/gh error line). The terminal focus in/out state is reflected by the bottom accent bar.

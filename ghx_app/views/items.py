@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
+import pyperclip
 from prompt_toolkit.layout import HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from rich.console import Console
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
 
 DETAIL_SECTION_ROWS = 8
 DETAIL_LABELS_WIDTH = 36
+WORKTREE_RE = re.compile(r"is already used by worktree at '(.+)'")
 
 
 def label_names(item: dict) -> str:
@@ -99,11 +102,27 @@ def detail_section(header: Callable[[], StyleText], text: Callable[[], StyleText
     ])
 
 
+def checkout_error(stderr: str) -> str:
+    if worktree := WORKTREE_RE.search(stderr):
+        pyperclip.copy(worktree[1])
+        return f"branch is checked out in worktree {worktree[1]} (path copied)"
+    if "would be overwritten by checkout" in stderr:
+        return "uncommitted changes would be overwritten, commit or stash first"
+    if "Not possible to fast-forward" in stderr:
+        return "local branch diverged from the PR, rebase/merge or run `gh pr checkout -f`"
+    lines = [line for line in stderr.splitlines() if line.strip() and not line.startswith(("hint:", "failed to run git"))]
+    return lines[-1] if lines else "unknown error"
+
+
 @dataclass
 class Checkout:
     number: int
 
     def run(self, shell: Shell) -> None:
         Console().print(f"\n[bold {C['green']}]Checking out PR #{self.number}...[/]")
-        subprocess.run(["gh", "pr", "checkout", str(self.number)])
+        result = subprocess.run(["gh", "pr", "checkout", str(self.number)], stderr=subprocess.PIPE, text=True)
         shell.on_branch_change()
+        if result.returncode == 0:
+            shell.flash(f"checked out PR #{self.number}")
+        else:
+            shell.flash(f"checkout of PR #{self.number} failed: {checkout_error(result.stderr)}")
