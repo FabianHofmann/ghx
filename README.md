@@ -1,6 +1,6 @@
 # ghx
 
-A combined GitHub TUI for everyday PR workflows: browse and checkout PRs, watch CI checks, work through unresolved review comments, and triage notifications — all in one full-screen app with a persistent branch-context status bar.
+A combined GitHub TUI for everyday PR workflows: browse and checkout PRs, watch CI checks, work through unresolved review comments, triage notifications, and see which issues are being worked on — all in one full-screen app with a persistent branch-context status bar.
 
 Runs standalone via `uv run` with [PEP 723](https://peps.python.org/pep-0723/) inline script metadata — no virtual environment or `pip install` needed.
 
@@ -14,7 +14,7 @@ Runs standalone via `uv run` with [PEP 723](https://peps.python.org/pep-0723/) i
 
 ```bash
 ./ghx.py             # Start on the PRs view
-./ghx.py ci          # Start on a specific view (prefix-matched: prs, ci, comments, notifs)
+./ghx.py ci          # Start on a specific view (prefix-matched: prs, issues, ci, comments, notifs, work)
 ./ghx.py -m          # PRs view filtered to PRs authored by me
 ./ghx.py | cat       # Non-interactive: print branch context (current PR + linked issues)
 ```
@@ -23,11 +23,11 @@ Outside a git repository only `ghx notifs` works (notifications across all repos
 
 ## Views
 
-Switch views with `1`–`5` or `Tab`/`Shift-Tab`. Global keys everywhere:
+Switch views with `1`–`6` or `Tab`/`Shift-Tab`. Global keys everywhere:
 
 | Key | Action |
 |---|---|
-| `1`–`5`, `Tab` | Switch view |
+| `1`–`6`, `Tab` | Switch view |
 | `j/k`, `↑/↓` | Navigate |
 | `r` | Refresh active view |
 | `o` | Open current branch's PR in browser |
@@ -86,6 +86,31 @@ Unread GitHub notifications, auto-scoped to the current repo (all repos when out
 | `d` | Mark done |
 | `Space` | Toggle detail pane |
 
+### 6 · Work
+
+Open issues and open PRs (latest 50 each, one GraphQL query) as a tree, linked via the PRs' closing issue references:
+
+```
+ ▾ In progress (1)
+   #412   Fix tz handling in loader          @anna     bug
+   ├ #430   Fix tz offsets                   @fabian   fix-tz    approved  +40 −3
+   └ #431   Add tz tests                     @lisa     tz-tests  draft     +12 −0
+ ▾ PRs without issue (1)
+   #427   Bump deps                          @bot      bump-deps pending   +3 −3
+ ▾ Issues without PR (1)
+   #405   Docs: install on Windows           —         docs
+```
+
+A PR closing several open issues is listed under each; a PR closing only issues outside the loaded list counts as "without issue". Background polling (30s).
+
+| Key | Action |
+|---|---|
+| `Enter` | Open issue/PR in browser |
+| `c` | Checkout PR |
+| `Space` | Fold/unfold group (on a group header) |
+| `f` | Find: filter the tree live by number, title, branch, author or label (a match keeps its parent issue / child PRs visible); `Enter` keeps the filter (local only, no GitHub search); `Esc` clears |
+| `m` | Toggle "mine": PRs authored by me, issues assigned to or opened by me |
+
 ## Status bar
 
 The bottom status bar (no selection, always visible) shows the current branch context and refreshes every 30s:
@@ -115,12 +140,12 @@ chmod +x /path/to/ghx/ghx.py
 `ghx.py` is a thin PEP 723 entry script that prefetches gh data with `subprocess.Popen` before the heavy TUI imports, then hands over to the local `ghx_app/` package:
 
 - `theme.py` — shared Monokai style, state chips, pygments token colors
-- `gh.py` — gh CLI / GraphQL helpers, branch-context query
-- `util.py` — text helpers (`ellipsize`, `relative_time`)
+- `gh.py` — gh CLI / GraphQL helpers, branch-context and work-tree queries
+- `util.py` — text and shared row helpers (`ellipsize`, `relative_time`, PR `status_text`, `label_fragments` chips)
 - `base.py` — `Shared` state and the `ListView` base class (cursor/scroll, lazy loading, nav keys)
-- `search.py` — `SearchableView`: `f` search bar with live local filter and GitHub search (PRs, Issues)
+- `search.py` — `SearchableView`: `f` search bar with live local filter and GitHub search (PRs, Issues; Work filters locally only)
 - `shell.py` — app shell: layout, view switching, global keys, footer, poll scheduler
 - `statusbar.py` — branch-context status bar
-- `views/` — the five views
+- `views/` — the six views
 
 Actions that must leave the TUI (checkout, inline reply) exit the app with a pending action; a rerun loop in `ghx.py` executes it and re-enters with view state intact. The terminal focus in/out state is reflected by the bottom accent bar.

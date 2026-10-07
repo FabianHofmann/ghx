@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ghx_app import gh
 
-VIEW_NAMES = ["prs", "issues", "ci", "comments", "notifs"]
+VIEW_NAMES = ["prs", "issues", "ci", "comments", "notifs", "work"]
 
 def resolve_view(name: str) -> str:
     matches = [v for v in VIEW_NAMES if v.startswith(name)]
@@ -52,7 +52,7 @@ def read_output(proc: subprocess.Popen[str]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs, issues, CI, review comments, notifications")
+    parser = argparse.ArgumentParser(description="Combined GitHub TUI: PRs, issues, CI, review comments, notifications, work tree")
     parser.add_argument("view", nargs="?", default="prs", help=f"initial view: {', '.join(VIEW_NAMES)} (prefix ok)")
     parser.add_argument("-m", "--mine", action="store_true", help="show only PRs authored by me / issues assigned to me")
     parser.add_argument("-o", "--open", action="store_true", help="open the current branch's PR in the browser and exit")

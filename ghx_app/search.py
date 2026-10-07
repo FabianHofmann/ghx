@@ -52,12 +52,17 @@ class SearchableView(ListView):
         self.all_items = items
         self.apply_filter()
 
+    def filter_terms(self) -> list[str]:
+        return self.search_buffer.text.lower().split() if self.search_mode else []
+
+    def matches(self, item: dict) -> bool:
+        return self.keep(item) and all(term in self.haystack(item).lower() for term in self.filter_terms())
+
+    def filtered(self) -> list[dict]:
+        return [it for it in self.all_items if self.matches(it)]
+
     def apply_filter(self) -> None:
-        terms = self.search_buffer.text.lower().split() if self.search_mode else []
-        self.items = [
-            it for it in self.all_items
-            if self.keep(it) and all(term in self.haystack(it).lower() for term in terms)
-        ]
+        self.items = self.filtered()
         self.cursor = min(self.cursor, max(0, len(self.items) - 1))
         self.adjust_scroll()
 

@@ -1,4 +1,10 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ghx_app.base import StyleText
 
 
 def label_fg(bg_hex: str) -> str:
@@ -32,3 +38,35 @@ def relative_time(iso_str: str) -> str:
     if days < 30:
         return f"{days}d"
     return f"{days // 30}mo"
+
+
+def status_text(pr: dict) -> tuple[str, str]:
+    if pr["isDraft"]:
+        return "item-draft", "draft"
+    review = pr.get("reviewDecision") or "PENDING"
+    if review == "APPROVED":
+        return "item-state", "approved"
+    if review == "CHANGES_REQUESTED":
+        return "item-author", "changes"
+    if review == "REVIEW_REQUIRED":
+        return "detail-label", "review"
+    return "detail-value", "pending"
+
+
+def label_fragments(labels: list[dict], max_width: int, selected: bool) -> StyleText:
+    fill = "class:sel-title" if selected else "class:item"
+    out: StyleText = []
+    used = 0
+    for l in labels:
+        chip = f" {l['name']} "
+        room = max_width - used - 1
+        if len(chip) > room and room < 4:
+            out.append(("class:item-time", "…"))
+            break
+        color = l["color"] or "88846f"
+        out.append((f"fg:{label_fg(color)} bg:#{color}", f" {ellipsize(l['name'], room - 2)} "))
+        out.append((fill, " "))
+        if len(chip) > room:
+            break
+        used += len(chip) + 1
+    return out

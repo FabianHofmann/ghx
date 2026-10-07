@@ -10,7 +10,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from ghx_app.base import StyleText
 from ghx_app.gh import gh_json, issue_list_args, open_url
 from ghx_app.search import SearchableView
-from ghx_app.util import ellipsize, label_fg, relative_time
+from ghx_app.util import ellipsize, label_fg, label_fragments, relative_time
 
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
@@ -23,6 +23,11 @@ LABELS_MAX_WIDTH = 40
 
 def assignee_of(issue: dict) -> str:
     return issue["assignees"][0]["login"] if issue["assignees"] else ""
+
+
+def issue_haystack(issue: dict) -> str:
+    labels = " ".join(l["name"] for l in issue["labels"])
+    return f"#{issue['number']} {issue['title']} {issue['author']['login']} {labels}"
 
 
 class IssuesView(SearchableView):
@@ -51,8 +56,7 @@ class IssuesView(SearchableView):
         return gh_json(issue_list_args(self.shared.mine, self.search_query))
 
     def haystack(self, item: dict) -> str:
-        labels = " ".join(l["name"] for l in item["labels"])
-        return f"#{item['number']} {item['title']} {item['author']['login']} {labels}"
+        return issue_haystack(item)
 
     def keep(self, item: dict) -> bool:
         return self.active_labels <= {l["name"] for l in item["labels"]}
@@ -78,24 +82,6 @@ class IssuesView(SearchableView):
     def chrome_rows(self) -> int:
         labels = self.label_panel_rows() + 3 if self.label_mode else 0
         return labels + super().chrome_rows()
-
-    def label_fragments(self, labels: list[dict], max_width: int, selected: bool) -> StyleText:
-        fill = "class:sel-title" if selected else "class:item"
-        out: StyleText = []
-        used = 0
-        for l in labels:
-            chip = f" {l['name']} "
-            room = max_width - used - 1
-            if len(chip) > room and room < 4:
-                out.append(("class:item-time", "…"))
-                break
-            color = l["color"] or "88846f"
-            out.append((f"fg:{label_fg(color)} bg:#{color}", f" {ellipsize(l['name'], room - 2)} "))
-            out.append((fill, " "))
-            if len(chip) > room:
-                break
-            used += len(chip) + 1
-        return out
 
     def list_fragments(self) -> StyleText:
         issues = self.items
@@ -131,7 +117,7 @@ class IssuesView(SearchableView):
             assignee = ("@" + ellipsize(login, col_assignee)) if login else "—"
             assignee = assignee.ljust(col_assignee + 1)
             when = f"{relative_time(it['updatedAt'])} ago".ljust(col_when)
-            chips = self.label_fragments(it["labels"], labels_width, is_sel)
+            chips = label_fragments(it["labels"], labels_width, is_sel)
             if is_sel:
                 lines.extend([
                     ("class:sel-prefix", prefix),

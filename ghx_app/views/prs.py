@@ -14,7 +14,7 @@ from ghx_app.base import ListView, StyleText
 from ghx_app.gh import gh_json, pr_list_args
 from ghx_app.search import SearchableView
 from ghx_app.theme import C
-from ghx_app.util import ellipsize
+from ghx_app.util import ellipsize, status_text
 
 if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
@@ -23,17 +23,37 @@ if TYPE_CHECKING:
 
 DETAIL_SECTION_ROWS = 8
 
-def status_text(pr: dict) -> tuple[str, str]:
-    if pr["isDraft"]:
-        return "item-draft", "draft"
+def pr_haystack(pr: dict) -> str:
+    return f"#{pr['number']} {pr['title']} {pr['headRefName']} {pr['author']['login']}"
+
+
+def item_header(item: dict) -> StyleText:
+    return [("class:header", f"  #{item['number']}: {item['title']}\n")]
+
+
+def pr_detail_text(pr: dict) -> StyleText:
     review = pr.get("reviewDecision") or "PENDING"
-    if review == "APPROVED":
-        return "item-state", "approved"
-    if review == "CHANGES_REQUESTED":
-        return "item-author", "changes"
-    if review == "REVIEW_REQUIRED":
-        return "detail-label", "review"
-    return "detail-value", "pending"
+    lines: StyleText = [
+        ("class:detail-label", "  Branch: "),
+        ("class:item-branch", pr["headRefName"]),
+        ("class:detail-value", "\n"),
+        ("class:detail-label", "  Author: "),
+        ("class:item-author", f"@{pr['author']['login']}"),
+        ("class:detail-value", "\n"),
+        ("class:detail-label", "  Status: "),
+        (f"class:review-{review.lower()}", review.replace("_", " ").title()),
+    ]
+    if pr["isDraft"]:
+        lines.append(("class:item-draft", " (draft)"))
+    lines.extend([
+        ("class:detail-value", "\n"),
+        ("class:detail-label", "  Changes: "),
+        ("class:additions", f"+{pr['additions']}"),
+        ("class:detail-value", " / "),
+        ("class:deletions", f"-{pr['deletions']}"),
+        ("class:detail-value", "\n"),
+    ])
+    return lines
 
 
 @dataclass
@@ -62,7 +82,7 @@ class PrsView(SearchableView):
         return gh_json(pr_list_args(self.shared.mine, self.search_query))
 
     def haystack(self, item: dict) -> str:
-        return f"#{item['number']} {item['title']} {item['headRefName']} {item['author']['login']}"
+        return pr_haystack(item)
 
     def hints(self) -> list[tuple[str, str]]:
         return super().hints() or [("Enter", "browse"), ("c", "checkout"), ("f", "find"), ("m", "mine")]
@@ -132,41 +152,12 @@ class PrsView(SearchableView):
                 ])
         return lines
 
-    def detail_header(self) -> StyleText:
-        pr = self.items[self.cursor]
-        return [("class:header", f"  #{pr['number']}: {pr['title']}\n")]
-
-    def detail_text(self) -> StyleText:
-        pr = self.items[self.cursor]
-        review = pr.get("reviewDecision") or "PENDING"
-        lines: StyleText = [
-            ("class:detail-label", "  Branch: "),
-            ("class:item-branch", pr["headRefName"]),
-            ("class:detail-value", "\n"),
-            ("class:detail-label", "  Author: "),
-            ("class:item-author", f"@{pr['author']['login']}"),
-            ("class:detail-value", "\n"),
-            ("class:detail-label", "  Status: "),
-            (f"class:review-{review.lower()}", review.replace("_", " ").title()),
-        ]
-        if pr["isDraft"]:
-            lines.append(("class:item-draft", " (draft)"))
-        lines.extend([
-            ("class:detail-value", "\n"),
-            ("class:detail-label", "  Changes: "),
-            ("class:additions", f"+{pr['additions']}"),
-            ("class:detail-value", " / "),
-            ("class:deletions", f"-{pr['deletions']}"),
-            ("class:detail-value", "\n"),
-        ])
-        return lines
-
     def detail_containers(self) -> list[AnyContainer]:
         visible = Condition(lambda: self.is_active() and bool(self.items) and self.detail_visible())
         section = HSplit([
             Window(char="─", height=1, style="class:border"),
-            Window(FormattedTextControl(self.detail_header), height=1),
-            Window(FormattedTextControl(self.detail_text), height=5),
+            Window(FormattedTextControl(lambda: item_header(self.items[self.cursor])), height=1),
+            Window(FormattedTextControl(lambda: pr_detail_text(self.items[self.cursor])), height=5),
             Window(char="─", height=1, style="class:border"),
         ])
         return [*super().detail_containers(), ConditionalContainer(section, filter=visible)]

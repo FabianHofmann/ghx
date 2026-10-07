@@ -22,6 +22,31 @@ query($owner: String!, $name: String!, $pr: Int!) {
 }
 """
 
+WORK_QUERY = """
+query($owner: String!, $name: String!) {
+  viewer { login }
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes {
+        number title headRefName isDraft reviewDecision additions deletions url
+        author { login }
+        closingIssuesReferences(first: 10) { nodes { number } }
+      }
+    }
+    issues(states: OPEN, first: 50, orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes {
+        number title url updatedAt
+        author { login }
+        labels(first: 20) { nodes { name color } }
+        assignees(first: 10) { nodes { login } }
+      }
+    }
+  }
+}
+"""
+
+GHOST = {"login": "ghost"}
+
 
 def run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["gh", *args], capture_output=True, text=True)
@@ -118,6 +143,42 @@ def fetch_context(repo: str, pr: int) -> dict | None:
             for issue in node["closingIssuesReferences"]["nodes"]
         ],
     }
+
+
+def fetch_work(repo: str) -> tuple[str, list[dict], list[dict]]:
+    owner, _, name = repo.partition("/")
+    data = graphql(WORK_QUERY, owner=owner, name=name)
+    repository = data["repository"]
+    prs = [
+        {
+            "kind": "pr",
+            "number": node["number"],
+            "title": node["title"],
+            "headRefName": node["headRefName"],
+            "author": node["author"] or GHOST,
+            "isDraft": node["isDraft"],
+            "reviewDecision": node["reviewDecision"],
+            "additions": node["additions"],
+            "deletions": node["deletions"],
+            "url": node["url"],
+            "closes": [issue["number"] for issue in node["closingIssuesReferences"]["nodes"]],
+        }
+        for node in repository["pullRequests"]["nodes"]
+    ]
+    issues = [
+        {
+            "kind": "issue",
+            "number": node["number"],
+            "title": node["title"],
+            "author": node["author"] or GHOST,
+            "labels": labels_of(node),
+            "assignees": node["assignees"]["nodes"],
+            "url": node["url"],
+            "updatedAt": node["updatedAt"],
+        }
+        for node in repository["issues"]["nodes"]
+    ]
+    return data["viewer"]["login"], prs, issues
 
 
 def open_url(url: str) -> None:
