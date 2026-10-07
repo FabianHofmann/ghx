@@ -250,7 +250,7 @@ class CommentsView(ListView):
 
     def hints(self) -> list[tuple[str, str]]:
         return [
-            ("Space", "select"), ("Enter", "open"), ("b", "browser"),
+            ("Space", "select"), ("Enter", "browse"), ("e", "edit"),
             ("a", "answer"), ("c", "copy"), ("d", "done"),
         ]
 
@@ -398,7 +398,7 @@ class CommentsView(ListView):
             else:
                 self.selected.add(self.cursor)
 
-        @kb.add("enter")
+        @kb.add("e")
         def _(event) -> None:
             if self.items:
                 c = self.items[self.cursor]
@@ -426,7 +426,7 @@ class CommentsView(ListView):
             self.cursor = min(self.cursor, max(0, len(self.items) - 1))
             self.adjust_scroll()
 
-        @kb.add("b")
+        @kb.add("enter")
         def _(event) -> None:
             if self.items and self.items[self.cursor]["url"]:
                 open_url(self.items[self.cursor]["url"])

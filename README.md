@@ -70,8 +70,8 @@ Unresolved PR review threads with syntax-highlighted code preview and full threa
 | Key | Action |
 |---|---|
 | `Space`, `x` | Multi-select |
-| `Enter` | Open in Zed |
-| `b` | Open in browser |
+| `Enter` | Open in browser |
+| `e` | Open in Zed |
 | `a` | Reply inline |
 | `c` | Copy Claude-formatted prompt to clipboard |
 | `d` | Resolve thread(s) |
