@@ -45,6 +45,7 @@ def who(item: dict) -> str:
 class WorkView(SearchableView):
     label = "Work"
     poll_interval = 30.0
+    github_search = False
 
     def __init__(self, shared: Shared) -> None:
         super().__init__(shared)
@@ -75,9 +76,6 @@ class WorkView(SearchableView):
             return item["author"]["login"] == self.viewer
         return self.viewer in {item["author"]["login"], *(a["login"] for a in item["assignees"])}
 
-    def filter_terms(self) -> list[str]:
-        return self.search_buffer.text.lower().split()
-
     def visible(self) -> dict[str, list[tuple[dict, list[dict]]]]:
         groups: dict[str, list[tuple[dict, list[dict]]]] = {group: [] for group in GROUPS}
         for tree in self.all_items:
@@ -100,20 +98,13 @@ class WorkView(SearchableView):
                 rows.extend({**pr, "tree": "└ " if pr is kids[-1] else "├ "} for pr in kids)
         return rows
 
-    def end_search(self, event, query: str) -> None:
-        self.search_mode = False
-        self.search_query = query
-        self.search_buffer.text = query
-        event.app.layout.focus(self.shell.list_window)
-        self.apply_filter()
-
     def on_activate(self) -> None:
         super().on_activate()
         self.apply_filter()
 
     def hints(self) -> list[tuple[str, str]]:
         if self.search_mode:
-            return [("Enter", "filter"), ("Esc", "clear")]
+            return super().hints()
         return [("Enter", "browse"), ("c", "checkout"), ("Space", "fold"), ("f", "find"), ("m", "mine")]
 
     def detail_visible(self) -> bool:

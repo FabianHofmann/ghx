@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
@@ -15,10 +15,11 @@ if TYPE_CHECKING:
     from prompt_toolkit.layout import AnyContainer
 
 SEARCH_PROMPT = "  Search: "
-SEARCH_HINTS = [("Enter", "search GitHub"), ("Esc", "clear")]
 
 
 class SearchableView(ListView):
+    github_search: ClassVar[bool] = True
+
     def __init__(self, shared: Shared) -> None:
         super().__init__(shared)
         self.all_items: list[dict] = []
@@ -53,7 +54,7 @@ class SearchableView(ListView):
         self.apply_filter()
 
     def filter_terms(self) -> list[str]:
-        return self.search_buffer.text.lower().split() if self.search_mode else []
+        return self.search_buffer.text.lower().split()
 
     def matches(self, item: dict) -> bool:
         return self.keep(item) and all(term in self.haystack(item).lower() for term in self.filter_terms())
@@ -67,13 +68,16 @@ class SearchableView(ListView):
         self.adjust_scroll()
 
     def hints(self) -> list[tuple[str, str]]:
-        return SEARCH_HINTS if self.search_mode else []
+        if not self.search_mode:
+            return []
+        github = [("^G", "search GitHub")] if self.github_search else []
+        return [("Enter", "filter"), *github, ("Esc", "clear")]
 
     def capturing_input(self) -> bool:
         return self.search_mode
 
     def search_bar_visible(self) -> bool:
-        return self.search_mode or bool(self.search_query)
+        return self.search_mode or bool(self.search_buffer.text)
 
     def chrome_rows(self) -> int:
         return int(self.search_bar_visible())
@@ -91,16 +95,18 @@ class SearchableView(ListView):
         self.adjust_scroll()
         event.app.layout.focus(self.search_buffer)
 
-    def end_search(self, event, query: str) -> None:
+    def keep_filter(self, event) -> None:
         self.search_mode = False
         event.app.layout.focus(self.shell.list_window)
+        self.apply_filter()
+
+    def end_search(self, event, query: str) -> None:
+        self.keep_filter(event)
         if query == self.search_query:
-            self.apply_filter()
             return
         if not self.search_query:
             self.unsearched_items = self.all_items
         self.search_query = query
-        self.search_buffer.text = query
         self.cursor = 0
         self.scroll = 0
         if not query:
@@ -119,7 +125,13 @@ class SearchableView(ListView):
 
         @search.add("enter")
         def _(event) -> None:
-            self.end_search(event, self.search_buffer.text.strip())
+            self.keep_filter(event)
+
+        @search.add("c-g", filter=Condition(lambda: self.github_search))
+        def _(event) -> None:
+            query = self.search_buffer.text.strip()
+            self.search_buffer.text = ""
+            self.end_search(event, query)
 
         @search.add("escape", eager=True)
         def _(event) -> None:

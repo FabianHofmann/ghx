@@ -52,7 +52,7 @@ Status is the review status for PRs and the first assignee (else `open`) for iss
 |---|---|
 | `Enter` | Open in browser |
 | `c` | Checkout PR (PR rows only) |
-| `f` | Find: filter live by number, title, author, labels or branch; `Enter` searches GitHub (PRs and issues); `Esc` clears |
+| `f` | Find: filter live by number, title, author, labels or branch; `Enter` keeps the filter and returns to the list; `Ctrl+G` searches GitHub (PRs and issues); `Esc` clears |
 | `m` | Toggle "mine": PRs authored by me, issues assigned to me |
 
 ### 2 · PRs
@@ -63,7 +63,7 @@ Open PRs with branch, author, and review status (draft/approved/changes/review/p
 |---|---|
 | `Enter` | Open in browser |
 | `c` | Checkout PR |
-| `f` | Find: filter loaded PRs live by number, title, branch, author or label; `Enter` searches GitHub; `Esc` clears |
+| `f` | Find: filter loaded PRs live by number, title, branch, author or label; `Enter` keeps the filter and returns to the list; `Ctrl+G` searches GitHub; `Esc` clears |
 | `m` | Toggle "only my PRs" filter |
 
 ### 3 · Issues
@@ -73,7 +73,7 @@ Open issues (latest 50) with assignee and colored label chips.
 | Key | Action |
 |---|---|
 | `Enter` | Open in browser |
-| `f` | Find: filter loaded issues live by number, title, author or label; `Enter` searches GitHub (all issues, whole words, [search syntax](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests)); `Esc` clears |
+| `f` | Find: filter loaded issues live by number, title, author or label; `Enter` keeps the filter and returns to the list; `Ctrl+G` searches GitHub (all issues, whole words, [search syntax](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests)); `Esc` clears |
 | `l` | Label filter panel |
 | `m` | Toggle "assigned to me" filter |
 
@@ -99,7 +99,7 @@ A PR closing several open issues is listed under each; a PR closing only issues 
 | `Enter` | Open issue/PR in browser |
 | `c` | Checkout PR |
 | `Space` | Fold/unfold group (on a group header) |
-| `f` | Find: filter the tree live by number, title, branch, author or label (a match keeps its parent issue / child PRs visible); `Enter` keeps the filter (local only, no GitHub search); `Esc` clears |
+| `f` | Find: filter the tree live by number, title, branch, author or label (a match keeps its parent issue / child PRs visible); `Enter` keeps the filter and returns to the list (local only, no GitHub search); `Esc` clears |
 | `m` | Toggle "mine": PRs authored by me, issues assigned to or opened by me |
 
 ### 5 · CI
@@ -165,7 +165,7 @@ chmod +x /path/to/ghx/ghx.py
 - `gh.py` — gh CLI / GraphQL helpers, branch-context and work-tree queries, `merge_items` for the All view
 - `util.py` — text and shared row helpers (`ellipsize`, `relative_time`, PR `status_text`, `label_fragments` chips)
 - `base.py` — `Shared` state and the `ListView` base class (cursor/scroll, lazy loading, nav keys)
-- `search.py` — `SearchableView`: `f` search bar with live local filter and GitHub search (All, PRs, Issues; Work filters locally only)
+- `search.py` — `SearchableView`: `f` search bar with live local filter kept on `Enter`, GitHub search on `Ctrl+G` (All, PRs, Issues; Work filters locally only)
 - `shell.py` — app shell: layout, view switching, global keys, footer, poll scheduler
 - `statusbar.py` — branch-context status bar
 - `views/` — the seven views, plus `items.py` with shared PR/issue row helpers
