@@ -65,7 +65,7 @@ class PrsView(SearchableView):
         return f"#{item['number']} {item['title']} {item['headRefName']} {item['author']['login']}"
 
     def hints(self) -> list[tuple[str, str]]:
-        return super().hints() or [("Enter", "checkout"), ("b", "browse"), ("f", "find"), ("m", "mine")]
+        return super().hints() or [("Enter", "browse"), ("c", "checkout"), ("f", "find"), ("m", "mine")]
 
     def detail_visible(self) -> bool:
         return self.fits_section(DETAIL_SECTION_ROWS)
@@ -174,14 +174,14 @@ class PrsView(SearchableView):
     def view_bindings(self) -> KeyBindings:
         kb = ListView.bindings(self)
 
-        @kb.add("b")
+        @kb.add("enter")
         def _(event) -> None:
             if self.items:
                 number = self.items[self.cursor]["number"]
                 subprocess.Popen(["gh", "pr", "view", str(number), "--web"],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        @kb.add("enter")
+        @kb.add("c")
         def _(event) -> None:
             if self.items:
                 event.app.exit(result=Checkout(self.items[self.cursor]["number"]))

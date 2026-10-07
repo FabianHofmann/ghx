@@ -39,8 +39,8 @@ Open PRs with branch, author, and review status (draft/approved/changes/review/p
 
 | Key | Action |
 |---|---|
-| `Enter` | Checkout PR |
-| `b` | Open in browser |
+| `Enter` | Open in browser |
+| `c` | Checkout PR |
 | `f` | Find: filter loaded PRs live by number, title, branch or author; `Enter` searches GitHub; `Esc` clears |
 | `m` | Toggle "only my PRs" filter |
 
